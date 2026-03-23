@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>Space Time</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
+    #video {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover; z-index: 0;
+    }
+    #canvas {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 1; pointer-events: none;
+    }
+    #start-screen {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: #000;
+      z-index: 10;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 48px;
+    }
+    #start-screen p {
+      font-family: 'Helvetica Neue', Helvetica, sans-serif;
+      font-weight: 300;
+      color: rgba(255,255,255,0.9);
+      font-size: 14px; letter-spacing: 3px;
+      text-transform: uppercase; text-align: center;
+      padding: 0 60px; line-height: 2.8;
+    }
+    #start-btn {
+      font-family: 'Helvetica Neue', Helvetica, sans-serif;
+      font-weight: 400;
+      font-size: 12px; letter-spacing: 4px;
+      text-transform: uppercase; color: #000;
+      background: #fff; border: none;
+      padding: 18px 48px; cursor: pointer;
+      transition: opacity 0.4s;
+    }
+    #start-btn:active { opacity: 0.6; }
+    #info {
+      position: fixed; bottom: 24px; left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Helvetica Neue', Helvetica, sans-serif;
+      font-weight: 300;
+      font-size: 10px; letter-spacing: 3px;
+      color: rgba(255,255,255,0.3);
+      text-transform: uppercase; z-index: 5;
+      text-align: center; pointer-events: none;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="start-screen">
+    <p>Point the phone<br/>in front of you<br/>and activate the camera</p>
+    <button id="start-btn" onclick="startAR()">activate camera</button>
+  </div>
+
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <div id="info">space time</div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <script>
+
+    function makeSpaceTimeTexture() {
+      const size = 2048;
+      const c = document.createElement('canvas');
+      c.width = size; c.height = size;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, size, size);
+      ctx.font = `900 80px Arial Black, sans-serif`;
+      ctx.fillStyle = '#000000';
+      let seed = 137;
+      function rand() {
+        seed = (seed * 1664525 + 1013904223) & 0xffffffff;
+        return (seed >>> 0) / 0xffffffff;
+      }
+      const words = ['SPACE', 'TIME'];
+      let y = 100;
+      while (y < size + 100) {
+        let x = 0;
+        while (x < size + 300) {
+          const word = words[Math.floor(rand() * 2)];
+          ctx.fillText(word, x, y);
+          x += ctx.measureText(word).width;
+        }
+        y += 100;
+      }
+      return new THREE.CanvasTexture(c);
+    }
+
+    function makeIdeaTexture() {
+      const size = 2048;
+      const c = document.createElement('canvas');
+      c.width = size; c.height = size;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#ff69b4';
+      ctx.fillRect(0, 0, size, size);
+      ctx.font = `900 75px Arial Black, sans-serif`;
+      ctx.fillStyle = '#000000';
+      let seed = 291;
+      function rand() {
+        seed = (seed * 1664525 + 1013904223) & 0xffffffff;
+        return (seed >>> 0) / 0xffffffff;
+      }
+      const words = ['IDEA', 'NO IDEA'];
+      let y = 100;
+      while (y < size + 100) {
+        let x = 0;
+        while (x < size + 400) {
+          const word = words[Math.floor(rand() * 2)];
+          ctx.fillText(word, x, y);
+          x += ctx.measureText(word).width + 20;
+        }
+        y += 100;
+      }
+      return new THREE.CanvasTexture(c);
+    }
+
+    function makeHorseTexture(onReady) {
+      const img = new Image();
+      img.onload = () => {
+        const size = 2048;
+        const c = document.createElement('canvas');
+        c.width = size; c.height = size;
+        const ctx = c.getContext('2d');
+        const aspect = img.width / img.height;
+        let sx = 0, sy = 0, sw = img.width, sh = img.height;
+        if (aspect > 1) { sx = (img.width - img.height) / 2; sw = img.height; }
+        else { sy = (img.height - img.width) / 2; sh = img.width; }
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, size, size);
+        onReady(new THREE.CanvasTexture(c));
+      };
+      img.onerror = () => {
+        const size = 512;
+        const c = document.createElement('canvas');
+        c.width = size; c.height = size;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#cc8844';
+        ctx.fillRect(0, 0, size, size);
+        onReady(new THREE.CanvasTexture(c));
+      };
+      img.src = 'horse.png';
+    }
+
+    function makePyramidMesh(horseTexture) {
+      const geo = new THREE.BufferGeometry();
+      const h = 2.2, b = 1.2;
+      const vertices = new Float32Array([
+        0, h, 0,   -b, 0,  b,    b, 0,  b,
+        0, h, 0,    b, 0,  b,    b, 0, -b,
+        0, h, 0,    b, 0, -b,   -b, 0, -b,
+        0, h, 0,   -b, 0, -b,   -b, 0,  b,
+        -b, 0,  b,  -b, 0, -b,   b, 0,  b,
+         b, 0,  b,  -b, 0, -b,   b, 0, -b,
+      ]);
+      const uvs = new Float32Array([
+        0.5,1, 0,0, 1,0,
+        0.5,1, 0,0, 1,0,
+        0.5,1, 0,0, 1,0,
+        0.5,1, 0,0, 1,0,
+        0,0,   0,1,  1,0,
+        1,0,   0,1,  1,1,
+      ]);
+      geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+      geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+      geo.computeVertexNormals();
+      return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+        map: horseTexture, roughness: 0.85, metalness: 0.05, side: THREE.DoubleSide
+      }));
+    }
+
+    async function startAR() {
+      document.getElementById('start-screen').style.display = 'none';
+      const video = document.getElementById('video');
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false
+        });
+        video.srcObject = stream;
+      } catch(e) {
+        alert('Cannot access camera: ' + e.message);
+        return;
+      }
+      makeHorseTexture((horseTexture) => { initScene(horseTexture); });
+    }
+
+    function initScene(horseTexture) {
+      const canvas = document.getElementById('canvas');
+      const W = window.innerWidth;
+      const H = window.innerHeight;
+
+      const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+      renderer.setSize(W, H);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setClearColor(0x000000, 0);
+
+      const scene = new THREE.Scene();
+      const FOV = 60;
+      const camera = new THREE.PerspectiveCamera(FOV, W / H, 0.001, 1000);
+      camera.position.set(0, 0, 0);
+
+      scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+      const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+      dir.position.set(3, 5, 3);
+      scene.add(dir);
+
+      const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(1, 64, 64),
+        new THREE.MeshStandardMaterial({ map: makeSpaceTimeTexture(), roughness: 0.85, metalness: 0.05 })
+      );
+      const cube = new THREE.Mesh(
+        new THREE.BoxGeometry(1.6, 1.6, 1.6),
+        new THREE.MeshStandardMaterial({ map: makeIdeaTexture(), roughness: 0.85, metalness: 0.05 })
+      );
+      const pyramid = makePyramidMesh(horseTexture);
+
+      const shapes = [sphere, cube, pyramid];
+      const rotSpeeds = [
+        { x: 0.005, y: 0.008, z: 0.003 },
+        { x: 0.009, y: 0.006, z: 0.004 },
+        { x: 0.002, y: 0.007, z: 0.001 },
+      ];
+
+      shapes.forEach(s => { s.visible = false; scene.add(s); });
+      document.getElementById('info').style.display = 'block';
+
+      // Shape travels from FAR (tiny, ahead) to NEAR (past camera, behind)
+      const FAR_Z   = -25;  // starts tiny far ahead
+      const NEAR_Z  =  2.5; // disappears just behind camera
+      const SHAPE_DURATION = 8000; // 8s per shape
+      const STEP = SHAPE_DURATION * 0.75; // next shape starts at 75% of previous
+
+      let startTime = null;
+
+      function easeInOut(t) {
+        return t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+      }
+
+      function animate(timestamp) {
+        requestAnimationFrame(animate);
+        if (!startTime) startTime = timestamp;
+
+        const elapsed = timestamp - startTime;
+
+        shapes.forEach((shape, i) => {
+          // Each shape has its own offset in the continuous timeline
+          const offset = i * STEP;
+          const cycle = STEP * shapes.length;
+          const local = ((elapsed - offset) % cycle + cycle) % cycle;
+          const t = local / SHAPE_DURATION;
+
+          if (t >= 0 && t <= 1) {
+            shape.visible = true;
+            const eased = easeInOut(t);
+            const z = FAR_Z + (NEAR_Z - FAR_Z) * eased;
+            shape.position.set(0, 0, z);
+
+            // Scale: grows as it approaches, continues growing as it passes
+            const scale = 0.04 + 3.5 * eased;
+            shape.scale.setScalar(scale);
+
+            const r = rotSpeeds[i];
+            shape.rotation.x += r.x;
+            shape.rotation.y += r.y;
+            shape.rotation.z += r.z;
+          } else {
+            shape.visible = false;
+          }
+        });
+
+        renderer.render(scene, camera);
+      }
+
+      requestAnimationFrame(animate);
+
+      window.addEventListener('resize', () => {
+        const W = window.innerWidth;
+        const H = window.innerHeight;
+        renderer.setSize(W, H);
+        camera.aspect = W / H;
+        camera.updateProjectionMatrix();
+      });
+    }
+  </script>
+
+</body>
+</html>
