@@ -35,8 +35,9 @@
     function initAudio() {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
+      // PROBLEM 3 FIX: Adjusted limiter threshold from -3dB to -1dB for better speaker output
       const limiter = audioCtx.createDynamicsCompressor();
-      limiter.threshold.value = -3; limiter.knee.value = 3;
+      limiter.threshold.value = -1; limiter.knee.value = 3;
       limiter.ratio.value = 20; limiter.attack.value = 0.001; limiter.release.value = 0.1;
       limiter.connect(audioCtx.destination);
 
@@ -53,7 +54,18 @@
 
       droneGain.connect(convolver); convolver.connect(limiter);
       droneGain.connect(limiter);
-      droneGain.gain.setTargetAtTime(0.12, audioCtx.currentTime, 2.5);
+      // PROBLEM 3 FIX: Increased drone volume from 0.12 to 0.20 for device speakers
+      droneGain.gain.setTargetAtTime(0.20, audioCtx.currentTime, 2.5);
+
+      // PROBLEM 3 FIX: Diagnostic beep to confirm audio routing on device speakers
+      const testOsc = audioCtx.createOscillator();
+      const testGain = audioCtx.createGain();
+      testGain.gain.value = 0.3;
+      testOsc.connect(testGain);
+      testGain.connect(limiter);
+      testOsc.frequency.value = 440;
+      testOsc.start();
+      testOsc.stop(audioCtx.currentTime + 0.15);
 
       return limiter;
     }
@@ -98,10 +110,11 @@
 
     function setShapeSoundVolume(t) {
       if (!shapeSound || !audioCtx) return;
+      // PROBLEM 3 FIX: Increased peak volume from 0.28 to 0.45 for device speakers
       let vol;
-      if (t < 0.6)      vol = (t / 0.6) * 0.28;
-      else if (t < 0.8) vol = 0.28;
-      else              vol = ((1 - t) / 0.2) * 0.28;
+      if (t < 0.6)      vol = (t / 0.6) * 0.45;
+      else if (t < 0.8) vol = 0.45;
+      else              vol = ((1 - t) / 0.2) * 0.45;
       shapeSound.gain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
     }
 
@@ -170,6 +183,12 @@
       } catch(e) { alert('Cannot access camera: ' + e.message); return; }
 
       masterOutput = initAudio();
+      
+      // PROBLEM 3 FIX: Explicitly resume AudioContext for iOS/Safari speaker output
+      if (audioCtx && audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
+      
       initScene();
     }
 
@@ -205,6 +224,17 @@
         { x:0.004, y:0.009, z:0.005 },
       ];
 
+      // PROBLEM 2: Trajectory configurations for lateral motion
+      // Each shape gets unique exit direction and drift parameters
+      const trajectories = [
+        { xCurve: -9,  yDrift: 2.5  }, // sphere exits left-up
+        { xCurve: 8,   yDrift: -2   }, // cube exits right-down
+        { xCurve: -7,  yDrift: -3   }, // pyramid exits left-down
+        { xCurve: 10,  yDrift: 1.5  }, // torus exits right-up
+        { xCurve: -11, yDrift: 0.5  }, // icosahedron exits left-slight-up
+        { xCurve: 6,   yDrift: -1   }, // torus knot exits right-slight-down
+      ];
+
       shapes.forEach(s => { s.visible = false; scene.add(s); });
       document.getElementById('info').style.display = 'block';
 
@@ -214,6 +244,46 @@
       let startTime = null, lastShapeIndex = -1;
 
       function easeInOut(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
+
+      // PROBLEM 2: Calculate position with curved trajectory
+      function calculatePosition(t, trajectory) {
+        const eased = easeInOut(t);
+        
+        // Z-axis: emanate from far, approach near, then pass through
+        let z;
+        if (t < 0.7) {
+          z = FAR_Z + (NEAR_Z - FAR_Z) * eased;
+        } else {
+          // Continue past NEAR_Z in final phase
+          const exitProgress = (t - 0.7) / 0.3;
+          z = NEAR_Z + exitProgress * 8; // push past camera
+        }
+
+        // X-axis: gentle drift, converge, then veer off-screen
+        let x;
+        if (t < 0.4) {
+          // Phase 1: emanate with slight drift
+          x = (t / 0.4) * 0.3 * trajectory.xCurve;
+        } else if (t < 0.7) {
+          // Phase 2: hold near center
+          x = 0.3 * trajectory.xCurve;
+        } else {
+          // Phase 3: accelerate off-screen
+          const exitProgress = (t - 0.7) / 0.3;
+          x = 0.3 * trajectory.xCurve + (exitProgress * exitProgress * 2) * trajectory.xCurve;
+        }
+
+        // Y-axis: subtle vertical drift throughout, more pronounced at exit
+        let y;
+        if (t < 0.7) {
+          y = (t / 0.7) * 0.2 * trajectory.yDrift;
+        } else {
+          const exitProgress = (t - 0.7) / 0.3;
+          y = 0.2 * trajectory.yDrift + exitProgress * trajectory.yDrift;
+        }
+
+        return { x, y, z };
+      }
 
       function animate(timestamp) {
         requestAnimationFrame(animate);
@@ -229,8 +299,13 @@
 
         shapes.forEach((s, i) => { s.visible = i === shapeIndex; });
         const current = shapes[shapeIndex];
+        
+        // PROBLEM 2: Apply curved trajectory motion
+        const trajectory = trajectories[shapeIndex];
+        const pos = calculatePosition(t, trajectory);
+        current.position.set(pos.x, pos.y, pos.z);
+        
         const eased = easeInOut(t);
-        current.position.set(0, 0, FAR_Z + (NEAR_Z - FAR_Z) * eased);
         current.scale.setScalar(0.04 + 3.5 * eased);
         const r = rotSpeeds[shapeIndex];
         current.rotation.x += r.x; current.rotation.y += r.y; current.rotation.z += r.z;
