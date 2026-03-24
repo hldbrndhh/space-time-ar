@@ -76,3 +76,23 @@
       document.getElementById('info').style.display = 'block';
       const FAR_Z = -25, NEAR_Z = 2.5, SHAPE_DURATION = 14000, TOTAL_CYCLE = SHAPE_DURATION * shapes.length;
       let startTime = null;
+      function easeInOut(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
+      function animate(timestamp) {
+        requestAnimationFrame(animate);
+        if (!startTime) startTime = timestamp;
+        const elapsed = (timestamp - startTime) % TOTAL_CYCLE;
+        const shapeIndex = Math.floor(elapsed / SHAPE_DURATION);
+        const t = (elapsed % SHAPE_DURATION) / SHAPE_DURATION;
+        shapes.forEach((s, i) => { s.visible = i === shapeIndex; });
+        const current = shapes[shapeIndex]; const eased = easeInOut(t);
+        current.position.set(0, 0, FAR_Z + (NEAR_Z - FAR_Z) * eased);
+        current.scale.setScalar(0.04 + 3.5 * eased);
+        const r = rotSpeeds[shapeIndex]; current.rotation.x += r.x; current.rotation.y += r.y; current.rotation.z += r.z;
+        renderer.render(scene, camera);
+      }
+      requestAnimationFrame(animate);
+      window.addEventListener('resize', () => { const W = window.innerWidth, H = window.innerHeight; renderer.setSize(W, H); camera.aspect = W / H; camera.updateProjectionMatrix(); });
+    }
+  </script>
+</body>
+</html>
