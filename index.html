@@ -3,12 +3,11 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
-  <title>Space Time</title>
+  <title>Space Time AR</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
-    #video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
-    #canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+    #arjs-video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
     #start-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 48px; }
     #start-screen p { font-family: 'Helvetica Neue', Helvetica, sans-serif; font-weight: 300; color: rgba(255,255,255,0.9); font-size: 14px; letter-spacing: 3px; text-transform: uppercase; text-align: center; padding: 0 60px; line-height: 2.8; }
     #start-btn { font-family: 'Helvetica Neue', Helvetica, sans-serif; font-weight: 400; font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: #000; background: #fff; border: none; padding: 18px 48px; cursor: pointer; transition: opacity 0.4s; }
@@ -18,15 +17,17 @@
 </head>
 <body>
   <div id="start-screen">
-    <p>Point the phone<br/>in front of you<br/>and activate the camera</p>
+    <p>Point your camera<br/>at the marker<br/>to begin</p>
     <button id="start-btn" onclick="startAR()">activate camera</button>
   </div>
-  <video id="video" autoplay playsinline muted></video>
-  <canvas id="canvas"></canvas>
   <div id="info">space time</div>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script>
 
+  <!-- AR.js libraries -->
+  <script src="https://cdn.jsdelivr.net/gh/aframevr/aframe@1c2407b26c61958baa93967b5412487cd94b290b/dist/aframe-master.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <script>
     // ─── AUDIO ENGINE ─────────────────────────────────────────────────────────────
     let audioCtx = null;
     let shapeSound = null;
@@ -35,9 +36,13 @@
     function initAudio() {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
+      // Adjusted limiter threshold for better speaker output
       const limiter = audioCtx.createDynamicsCompressor();
-      limiter.threshold.value = -3; limiter.knee.value = 3;
-      limiter.ratio.value = 20; limiter.attack.value = 0.001; limiter.release.value = 0.1;
+      limiter.threshold.value = -1; 
+      limiter.knee.value = 3;
+      limiter.ratio.value = 20; 
+      limiter.attack.value = 0.001; 
+      limiter.release.value = 0.1;
       limiter.connect(audioCtx.destination);
 
       // Ambient drone — three detuned oscillators through reverb
@@ -47,13 +52,28 @@
       convolver.buffer = makeReverb(audioCtx, 3.5, 2.0);
 
       [[55,'sine'],[55.5,'sine'],[82.4,'triangle']].forEach(([freq, type]) => {
-        const o = audioCtx.createOscillator(); o.type = type; o.frequency.value = freq;
-        o.connect(droneGain); o.start();
+        const o = audioCtx.createOscillator(); 
+        o.type = type; 
+        o.frequency.value = freq;
+        o.connect(droneGain); 
+        o.start();
       });
 
-      droneGain.connect(convolver); convolver.connect(limiter);
+      droneGain.connect(convolver); 
+      convolver.connect(limiter);
       droneGain.connect(limiter);
-      droneGain.gain.setTargetAtTime(0.12, audioCtx.currentTime, 2.5);
+      // Increased drone volume for device speakers
+      droneGain.gain.setTargetAtTime(0.20, audioCtx.currentTime, 2.5);
+
+      // Diagnostic beep to confirm audio routing
+      const testOsc = audioCtx.createOscillator();
+      const testGain = audioCtx.createGain();
+      testGain.gain.value = 0.3;
+      testOsc.connect(testGain);
+      testGain.connect(limiter);
+      testOsc.frequency.value = 440;
+      testOsc.start();
+      testOsc.stop(audioCtx.currentTime + 0.15);
 
       return limiter;
     }
@@ -85,23 +105,37 @@
       const cfg = shapeSoundConfigs[index];
       if (!cfg) return;
 
-      const gain = audioCtx.createGain(); gain.gain.value = 0.0;
-      const osc = audioCtx.createOscillator(); osc.type = cfg.type; osc.frequency.value = cfg.freq;
-      const subOsc = audioCtx.createOscillator(); subOsc.type = 'sine'; subOsc.frequency.value = cfg.freq / 2;
-      const subGain = audioCtx.createGain(); subGain.gain.value = 0.4; subOsc.connect(subGain);
-      const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass';
-      filter.frequency.value = cfg.filterFreq; filter.Q.value = 2.0;
-      osc.connect(filter); subGain.connect(filter); filter.connect(gain); gain.connect(masterOutput);
-      osc.start(); subOsc.start();
+      const gain = audioCtx.createGain(); 
+      gain.gain.value = 0.0;
+      const osc = audioCtx.createOscillator(); 
+      osc.type = cfg.type; 
+      osc.frequency.value = cfg.freq;
+      const subOsc = audioCtx.createOscillator(); 
+      subOsc.type = 'sine'; 
+      subOsc.frequency.value = cfg.freq / 2;
+      const subGain = audioCtx.createGain(); 
+      subGain.gain.value = 0.4; 
+      subOsc.connect(subGain);
+      const filter = audioCtx.createBiquadFilter(); 
+      filter.type = 'lowpass';
+      filter.frequency.value = cfg.filterFreq; 
+      filter.Q.value = 2.0;
+      osc.connect(filter); 
+      subGain.connect(filter); 
+      filter.connect(gain); 
+      gain.connect(masterOutput);
+      osc.start(); 
+      subOsc.start();
       shapeSound = { osc, subOsc, gain };
     }
 
     function setShapeSoundVolume(t) {
       if (!shapeSound || !audioCtx) return;
+      // Increased peak volume for device speakers
       let vol;
-      if (t < 0.6)      vol = (t / 0.6) * 0.28;
-      else if (t < 0.8) vol = 0.28;
-      else              vol = ((1 - t) / 0.2) * 0.28;
+      if (t < 0.6)      vol = (t / 0.6) * 0.45;
+      else if (t < 0.8) vol = 0.45;
+      else              vol = ((1 - t) / 0.2) * 0.45;
       shapeSound.gain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
     }
 
@@ -118,12 +152,19 @@
     // ─── TEXTURE FACTORY ──────────────────────────────────────────────────────────
     function makeLinearTexture(bg, fg, words, seed0, fontSize, lineH, gap) {
       const size = 2048;
-      const c = document.createElement('canvas'); c.width = size; c.height = size;
+      const c = document.createElement('canvas'); 
+      c.width = size; 
+      c.height = size;
       const ctx = c.getContext('2d');
-      ctx.fillStyle = bg; ctx.fillRect(0, 0, size, size);
-      ctx.font = `900 ${fontSize}px Arial Black, sans-serif`; ctx.fillStyle = fg;
+      ctx.fillStyle = bg; 
+      ctx.fillRect(0, 0, size, size);
+      ctx.font = `900 ${fontSize}px Arial Black, sans-serif`; 
+      ctx.fillStyle = fg;
       let seed = seed0;
-      function rand() { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; }
+      function rand() { 
+        seed = (seed * 1664525 + 1013904223) & 0xffffffff; 
+        return (seed >>> 0) / 0xffffffff; 
+      }
       let y = lineH;
       while (y < size + lineH) {
         let x = 0;
@@ -147,7 +188,8 @@
 
     // ─── PYRAMID MESH (custom geometry) ───────────────────────────────────────────
     function makePyramidMesh(tex) {
-      const geo = new THREE.BufferGeometry(); const h = 2.2, b = 1.2;
+      const geo = new THREE.BufferGeometry(); 
+      const h = 2.2, b = 1.2;
       const vertices = new Float32Array([0,h,0,-b,0,b,b,0,b, 0,h,0,b,0,b,b,0,-b, 0,h,0,b,0,-b,-b,0,-b, 0,h,0,-b,0,-b,-b,0,b, -b,0,b,-b,0,-b,b,0,b, b,0,b,-b,0,-b,b,0,-b]);
       const uvs = new Float32Array([0.5,1,0,0,1,0, 0.5,1,0,0,1,0, 0.5,1,0,0,1,0, 0.5,1,0,0,1,0, 0,0,0,1,1,0, 1,0,0,1,1,1]);
       geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
@@ -156,94 +198,236 @@
       return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05, side: THREE.DoubleSide }));
     }
 
-    function mat(tex) { return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05 }); }
-
-    // ─── START ────────────────────────────────────────────────────────────────────
-    async function startAR() {
-      document.getElementById('start-screen').style.display = 'none';
-      const video = document.getElementById('video');
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
-        });
-        video.srcObject = stream;
-      } catch(e) { alert('Cannot access camera: ' + e.message); return; }
-
-      masterOutput = initAudio();
-      initScene();
+    function mat(tex) { 
+      return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05 }); 
     }
 
-    function initScene() {
-      const canvas = document.getElementById('canvas');
-      const W = window.innerWidth, H = window.innerHeight;
-      const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-      renderer.setSize(W, H); renderer.setPixelRatio(window.devicePixelRatio);
-      renderer.setClearColor(0x000000, 0);
+    // ─── AR.js SETUP ──────────────────────────────────────────────────────────────
+    let arScene = null;
+    let markerRoot = null;
+    let shapes = [];
+    let rotSpeeds = [];
+    let trajectories = [];
+    let startTime = null;
+    let lastShapeIndex = -1;
 
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(60, W / H, 0.001, 1000);
-      camera.position.set(0, 0, 0);
-      scene.add(new THREE.AmbientLight(0xffffff, 1.2));
-      const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(3, 5, 3); scene.add(dir);
-
-      // ── 6 shapes ──
-      const sphere    = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 64),             mat(makeSpaceTimeTexture()));
-      const cube      = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6),            mat(makeIdeaTexture()));
-      const pyramid   = makePyramidMesh(makePlusMinusTexture());
-      const torus     = new THREE.Mesh(new THREE.TorusGeometry(1, 0.38, 32, 100),       mat(makeWaitGoTexture()));
-      const icosa     = new THREE.Mesh(new THREE.IcosahedronGeometry(1.1, 1),           mat(makeSmileTexture()));
-      const torusKnot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.9, 0.3, 120, 16), mat(makeKnowTexture()));
-
-      const shapes = [sphere, cube, pyramid, torus, icosa, torusKnot];
-
-      const rotSpeeds = [
-        { x:0.005, y:0.008, z:0.003 },
-        { x:0.009, y:0.006, z:0.004 },
-        { x:0.002, y:0.007, z:0.001 },
-        { x:0.006, y:0.010, z:0.002 },
-        { x:0.007, y:0.005, z:0.006 },
-        { x:0.004, y:0.009, z:0.005 },
-      ];
-
-      shapes.forEach(s => { s.visible = false; scene.add(s); });
+    async function startAR() {
+      document.getElementById('start-screen').style.display = 'none';
       document.getElementById('info').style.display = 'block';
 
-      const FAR_Z = -25, NEAR_Z = 2.5;
-      const SHAPE_DURATION = 14000;
-      const TOTAL_CYCLE = SHAPE_DURATION * shapes.length;
-      let startTime = null, lastShapeIndex = -1;
-
-      function easeInOut(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
-
-      function animate(timestamp) {
-        requestAnimationFrame(animate);
-        if (!startTime) startTime = timestamp;
-        const elapsed = (timestamp - startTime) % TOTAL_CYCLE;
-        const shapeIndex = Math.floor(elapsed / SHAPE_DURATION);
-        const t = (elapsed % SHAPE_DURATION) / SHAPE_DURATION;
-
-        if (shapeIndex !== lastShapeIndex) {
-          lastShapeIndex = shapeIndex;
-          startShapeSound(shapeIndex);
-        }
-
-        shapes.forEach((s, i) => { s.visible = i === shapeIndex; });
-        const current = shapes[shapeIndex];
-        const eased = easeInOut(t);
-        current.position.set(0, 0, FAR_Z + (NEAR_Z - FAR_Z) * eased);
-        current.scale.setScalar(0.04 + 3.5 * eased);
-        const r = rotSpeeds[shapeIndex];
-        current.rotation.x += r.x; current.rotation.y += r.y; current.rotation.z += r.z;
-
-        setShapeSoundVolume(t);
-        renderer.render(scene, camera);
+      // Initialize audio
+      masterOutput = initAudio();
+      
+      // Explicitly resume AudioContext for iOS/Safari speaker output
+      if (audioCtx && audioCtx.state === 'suspended') {
+        await audioCtx.resume();
       }
 
-      requestAnimationFrame(animate);
-      window.addEventListener('resize', () => {
-        const W = window.innerWidth, H = window.innerHeight;
-        renderer.setSize(W, H); camera.aspect = W / H; camera.updateProjectionMatrix();
+      initARScene();
+    }
+
+    function initARScene() {
+      // Create A-Frame scene
+      const sceneEl = document.createElement('a-scene');
+      sceneEl.setAttribute('embedded', '');
+      sceneEl.setAttribute('arjs', 'sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;');
+      sceneEl.setAttribute('vr-mode-ui', 'enabled: false');
+      sceneEl.setAttribute('renderer', 'logarithmicDepthBuffer: true; precision: medium;');
+      document.body.appendChild(sceneEl);
+
+      // Wait for scene to load
+      sceneEl.addEventListener('loaded', function() {
+        arScene = sceneEl.sceneEl;
+        
+        // Get Three.js scene, camera, renderer from A-Frame
+        const scene = arScene.object3D;
+        const camera = arScene.camera;
+        const renderer = arScene.renderer;
+
+        // Create marker
+        const markerEl = document.createElement('a-marker');
+        markerEl.setAttribute('type', 'pattern');
+        markerEl.setAttribute('url', 'heromarketer2.patt'); // Pattern file generated from heromarketer2.png
+        sceneEl.appendChild(markerEl);
+
+        // Create a Three.js group to hold our shapes
+        markerRoot = new THREE.Group();
+        markerEl.object3D.add(markerRoot);
+
+        // Add lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+        markerRoot.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(3, 5, 3);
+        markerRoot.add(directionalLight);
+
+        // Create shapes
+        const sphere    = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 64),             mat(makeSpaceTimeTexture()));
+        const cube      = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6),            mat(makeIdeaTexture()));
+        const pyramid   = makePyramidMesh(makePlusMinusTexture());
+        const torus     = new THREE.Mesh(new THREE.TorusGeometry(1, 0.38, 32, 100),       mat(makeWaitGoTexture()));
+        const icosa     = new THREE.Mesh(new THREE.IcosahedronGeometry(1.1, 1),           mat(makeSmileTexture()));
+        const torusKnot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.9, 0.3, 120, 16), mat(makeKnowTexture()));
+
+        shapes = [sphere, cube, pyramid, torus, icosa, torusKnot];
+
+        rotSpeeds = [
+          { x:0.005, y:0.008, z:0.003 },
+          { x:0.009, y:0.006, z:0.004 },
+          { x:0.002, y:0.007, z:0.001 },
+          { x:0.006, y:0.010, z:0.002 },
+          { x:0.007, y:0.005, z:0.006 },
+          { x:0.004, y:0.009, z:0.005 },
+        ];
+
+        // NEW TRAJECTORY PATTERN: Right arc, Left arc, Center (fills screen), then repeat
+        // Pattern repeats every 3 shapes
+        trajectories = [
+          { type: 'right',  xCurve: 12,  yDrift: 0.5  }, // Shape 1: arc to right
+          { type: 'left',   xCurve: -12, yDrift: 0.5  }, // Shape 2: arc to left
+          { type: 'center', xCurve: 0,   yDrift: 0    }, // Shape 3: stay centered, fill screen
+          { type: 'right',  xCurve: 11,  yDrift: -0.8 }, // Shape 4: arc to right (repeat)
+          { type: 'left',   xCurve: -11, yDrift: -0.8 }, // Shape 5: arc to left (repeat)
+          { type: 'center', xCurve: 0,   yDrift: 0    }, // Shape 6: stay centered (repeat)
+        ];
+
+        shapes.forEach(s => { 
+          s.visible = false; 
+          markerRoot.add(s); 
+        });
+
+        // Start animation loop
+        animate();
       });
+
+      // Add camera entity
+      const cameraEl = document.createElement('a-entity');
+      cameraEl.setAttribute('camera', '');
+      sceneEl.appendChild(cameraEl);
+    }
+
+    const FAR_Z = -25;
+    const NEAR_Z = 2.5;
+    const SHAPE_DURATION = 14000;
+    const TOTAL_CYCLE = SHAPE_DURATION * shapes.length;
+
+    function easeInOut(t) { 
+      return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; 
+    }
+
+    function easeOutQuad(t) {
+      return 1 - (1 - t) * (1 - t);
+    }
+
+    // Calculate position with new trajectory pattern
+    function calculatePosition(t, trajectory) {
+      const eased = easeInOut(t);
+      
+      // Z-axis movement (depth)
+      let z;
+      if (trajectory.type === 'center') {
+        // Center type: comes very close, fills screen
+        if (t < 0.5) {
+          z = FAR_Z + (NEAR_Z + 5) * easeOutQuad(t / 0.5); // Approach even closer
+        } else if (t < 0.8) {
+          z = NEAR_Z + 5; // Hold close position
+        } else {
+          const exitProgress = (t - 0.8) / 0.2;
+          z = (NEAR_Z + 5) + exitProgress * 10; // Quick exit through camera
+        }
+      } else {
+        // Right/Left arc types
+        if (t < 0.7) {
+          z = FAR_Z + (NEAR_Z - FAR_Z) * eased;
+        } else {
+          const exitProgress = (t - 0.7) / 0.3;
+          z = NEAR_Z + exitProgress * 8;
+        }
+      }
+
+      // X-axis movement (horizontal)
+      let x = 0;
+      if (trajectory.type === 'right') {
+        // Smooth arc to the right
+        if (t < 0.3) {
+          x = 0; // Start centered
+        } else if (t < 0.7) {
+          const arcProgress = (t - 0.3) / 0.4;
+          x = easeOutQuad(arcProgress) * trajectory.xCurve * 0.5;
+        } else {
+          const exitProgress = (t - 0.7) / 0.3;
+          x = trajectory.xCurve * 0.5 + (exitProgress * exitProgress) * trajectory.xCurve;
+        }
+      } else if (trajectory.type === 'left') {
+        // Smooth arc to the left
+        if (t < 0.3) {
+          x = 0; // Start centered
+        } else if (t < 0.7) {
+          const arcProgress = (t - 0.3) / 0.4;
+          x = easeOutQuad(arcProgress) * trajectory.xCurve * 0.5;
+        } else {
+          const exitProgress = (t - 0.7) / 0.3;
+          x = trajectory.xCurve * 0.5 + (exitProgress * exitProgress) * trajectory.xCurve;
+        }
+      } else {
+        // Center: stays at x=0
+        x = 0;
+      }
+
+      // Y-axis movement (vertical)
+      let y = 0;
+      if (trajectory.type !== 'center' && Math.abs(trajectory.yDrift) > 0.1) {
+        if (t < 0.7) {
+          y = (t / 0.7) * 0.3 * trajectory.yDrift;
+        } else {
+          const exitProgress = (t - 0.7) / 0.3;
+          y = 0.3 * trajectory.yDrift + exitProgress * trajectory.yDrift;
+        }
+      }
+
+      return { x, y, z };
+    }
+
+    function animate() {
+      if (!arScene || !shapes.length) return;
+      
+      requestAnimationFrame(animate);
+      
+      const timestamp = performance.now();
+      if (!startTime) startTime = timestamp;
+      
+      const elapsed = (timestamp - startTime) % TOTAL_CYCLE;
+      const shapeIndex = Math.floor(elapsed / SHAPE_DURATION);
+      const t = (elapsed % SHAPE_DURATION) / SHAPE_DURATION;
+
+      if (shapeIndex !== lastShapeIndex) {
+        lastShapeIndex = shapeIndex;
+        startShapeSound(shapeIndex);
+      }
+
+      shapes.forEach((s, i) => { 
+        s.visible = i === shapeIndex; 
+      });
+      
+      const current = shapes[shapeIndex];
+      const trajectory = trajectories[shapeIndex];
+      const pos = calculatePosition(t, trajectory);
+      current.position.set(pos.x, pos.y, pos.z);
+      
+      // Scale adjustment for center type (fills screen more)
+      const eased = easeInOut(t);
+      if (trajectory.type === 'center') {
+        current.scale.setScalar(0.04 + 5.5 * eased); // Larger scale for center
+      } else {
+        current.scale.setScalar(0.04 + 3.5 * eased);
+      }
+      
+      const r = rotSpeeds[shapeIndex];
+      current.rotation.x += r.x; 
+      current.rotation.y += r.y; 
+      current.rotation.z += r.z;
+
+      setShapeSoundVolume(t);
     }
   </script>
 </body>
