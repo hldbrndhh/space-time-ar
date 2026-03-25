@@ -1,145 +1,129 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-  <meta http-equiv="Content-Style-Type" content="text/css">
-  <title></title>
-  <meta name="Generator" content="Cocoa HTML Writer">
-  <meta name="CocoaVersion" content="2575.4">
-  <style type="text/css">
-    p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica}
-    p.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica; min-height: 14.0px}
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>Space Time AR - Final Build</title>
+  
+  <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; width: 100vw; height: 100vh; font-family: 'Helvetica Neue', sans-serif; }
+    
+    #start-screen {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: #000; z-index: 9999; 
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 40px;
+    }
+    #start-screen p { color: rgba(255,255,255,0.9); font-size: 14px; letter-spacing: 3px; text-transform: uppercase; text-align: center; line-height: 2.8; }
+    #start-btn { font-weight: 400; font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: #000; background: #fff; border: none; padding: 18px 48px; cursor: pointer; }
+    
+    #ar-container { display: none; }
+    #info { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); font-size: 10px; letter-spacing: 3px; color: rgba(255,255,255,0.3); text-transform: uppercase; z-index: 5; pointer-events: none; }
   </style>
 </head>
+
 <body>
-<p class="p1">&lt;!DOCTYPE html&gt;</p>
-<p class="p1">&lt;html lang="en"&gt;</p>
-<p class="p1">&lt;head&gt;</p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;meta charset="UTF-8"/&gt;</p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/&gt;</p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;title&gt;Space Time AR - Final Build&lt;/title&gt;</p>
-<p class="p2"><span class="Apple-converted-space">  </span></p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;script src="https://aframe.io/releases/1.2.0/aframe.min.js"&gt;&lt;/script&gt;</p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"&gt;&lt;/script&gt;</p>
-<p class="p2"><br></p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;style&gt;</p>
-<p class="p1"><span class="Apple-converted-space">    </span>* { margin: 0; padding: 0; box-sizing: border-box; }</p>
-<p class="p1"><span class="Apple-converted-space">    </span>body { background: #000; overflow: hidden; width: 100vw; height: 100vh; font-family: 'Helvetica Neue', sans-serif; }</p>
-<p class="p2"><span class="Apple-converted-space">    </span></p>
-<p class="p1"><span class="Apple-converted-space">    </span>#start-screen {</p>
-<p class="p1"><span class="Apple-converted-space">      </span>position: fixed; top: 0; left: 0; width: 100%; height: 100%;</p>
-<p class="p1"><span class="Apple-converted-space">      </span>background: #000; z-index: 9999;<span class="Apple-converted-space"> </span></p>
-<p class="p1"><span class="Apple-converted-space">      </span>display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 40px;</p>
-<p class="p1"><span class="Apple-converted-space">    </span>}</p>
-<p class="p1"><span class="Apple-converted-space">    </span>#start-screen p { color: rgba(255,255,255,0.9); font-size: 14px; letter-spacing: 3px; text-transform: uppercase; text-align: center; line-height: 2.8; }</p>
-<p class="p1"><span class="Apple-converted-space">    </span>#start-btn { font-weight: 400; font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: #000; background: #fff; border: none; padding: 18px 48px; cursor: pointer; }</p>
-<p class="p2"><span class="Apple-converted-space">    </span></p>
-<p class="p1"><span class="Apple-converted-space">    </span>#ar-container { display: none; }</p>
-<p class="p1"><span class="Apple-converted-space">    </span>#info { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); font-size: 10px; letter-spacing: 3px; color: rgba(255,255,255,0.3); text-transform: uppercase; z-index: 5; pointer-events: none; }</p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;/style&gt;</p>
-<p class="p1">&lt;/head&gt;</p>
-<p class="p2"><br></p>
-<p class="p1">&lt;body&gt;</p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;div id="start-screen"&gt;</p>
-<p class="p1"><span class="Apple-converted-space">    </span>&lt;p&gt;Point your camera&lt;br/&gt;at the marker&lt;br/&gt;to begin&lt;/p&gt;</p>
-<p class="p1"><span class="Apple-converted-space">    </span>&lt;button id="start-btn"&gt;activate camera&lt;/button&gt;</p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;/div&gt;</p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;div id="info"&gt;space time&lt;/div&gt;</p>
-<p class="p2"><br></p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;div id="ar-container"&gt;</p>
-<p class="p1"><span class="Apple-converted-space">    </span>&lt;a-scene<span class="Apple-converted-space"> </span></p>
-<p class="p1"><span class="Apple-converted-space">      </span>embedded<span class="Apple-converted-space"> </span></p>
-<p class="p1"><span class="Apple-converted-space">      </span>arjs="sourceType: webcam; debugUIEnabled: false;"<span class="Apple-converted-space"> </span></p>
-<p class="p1"><span class="Apple-converted-space">      </span>vr-mode-ui="enabled: false"</p>
-<p class="p1"><span class="Apple-converted-space">      </span>loading-screen="enabled: false"&gt;</p>
-<p class="p2"><span class="Apple-converted-space">      </span></p>
-<p class="p1"><span class="Apple-converted-space">      </span>&lt;a-marker id="main-marker" type="pattern" url="heromarketer2.patt"&gt;</p>
-<p class="p1"><span class="Apple-converted-space">        </span>&lt;a-entity id="ar-objects"&gt;&lt;/a-entity&gt;</p>
-<p class="p1"><span class="Apple-converted-space">      </span>&lt;/a-marker&gt;</p>
-<p class="p2"><br></p>
-<p class="p1"><span class="Apple-converted-space">      </span>&lt;a-entity camera&gt;&lt;/a-entity&gt;</p>
-<p class="p1"><span class="Apple-converted-space">    </span>&lt;/a-scene&gt;</p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;/div&gt;</p>
-<p class="p2"><br></p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;script&gt;</p>
-<p class="p1"><span class="Apple-converted-space">    </span>// --- AUDIO &amp; TEXTURE LOGIC FROM ORIGINAL FILE ---</p>
-<p class="p1"><span class="Apple-converted-space">    </span>let audioCtx, shapeSound, masterOutput;</p>
-<p class="p1"><span class="Apple-converted-space">    </span>const startBtn = document.getElementById('start-btn');</p>
-<p class="p2"><br></p>
-<p class="p1"><span class="Apple-converted-space">    </span>function initAudio() {</p>
-<p class="p1"><span class="Apple-converted-space">      </span>audioCtx = new (window.AudioContext || window.webkitAudioContext)();</p>
-<p class="p1"><span class="Apple-converted-space">      </span>const limiter = audioCtx.createDynamicsCompressor();</p>
-<p class="p1"><span class="Apple-converted-space">      </span>limiter.threshold.value = -1;<span class="Apple-converted-space"> </span></p>
-<p class="p1"><span class="Apple-converted-space">      </span>limiter.connect(audioCtx.destination);</p>
-<p class="p1"><span class="Apple-converted-space">      </span>const droneGain = audioCtx.createGain();</p>
-<p class="p1"><span class="Apple-converted-space">      </span>droneGain.gain.value = 0.20;</p>
-<p class="p1"><span class="Apple-converted-space">      </span>[[55,'sine'],[55.5,'sine'],[82.4,'triangle']].forEach(([f, t]) =&gt; {</p>
-<p class="p1"><span class="Apple-converted-space">        </span>const o = audioCtx.createOscillator(); o.type = t; o.frequency.value = f;</p>
-<p class="p1"><span class="Apple-converted-space">        </span>o.connect(droneGain); o.start();</p>
-<p class="p1"><span class="Apple-converted-space">      </span>});</p>
-<p class="p1"><span class="Apple-converted-space">      </span>droneGain.connect(limiter);</p>
-<p class="p1"><span class="Apple-converted-space">      </span>return limiter;</p>
-<p class="p1"><span class="Apple-converted-space">    </span>}</p>
-<p class="p2"><br></p>
-<p class="p1"><span class="Apple-converted-space">    </span>function makeLinearTexture(bg, fg, words, fontSize) {</p>
-<p class="p1"><span class="Apple-converted-space">      </span>const size = 1024;</p>
-<p class="p1"><span class="Apple-converted-space">      </span>const c = document.createElement('canvas'); c.width = size; c.height = size;</p>
-<p class="p1"><span class="Apple-converted-space">      </span>const ctx = c.getContext('2d');</p>
-<p class="p1"><span class="Apple-converted-space">      </span>ctx.fillStyle = bg; ctx.fillRect(0, 0, size, size);</p>
-<p class="p1"><span class="Apple-converted-space">      </span>ctx.font = `900 ${fontSize}px Arial Black`; ctx.fillStyle = fg;</p>
-<p class="p1"><span class="Apple-converted-space">      </span>words.forEach((w, i) =&gt; ctx.fillText(w, 50, 200 + i * 200));</p>
-<p class="p1"><span class="Apple-converted-space">      </span>return new THREE.CanvasTexture(c);</p>
-<p class="p1"><span class="Apple-converted-space">    </span>}</p>
-<p class="p2"><br></p>
-<p class="p1"><span class="Apple-converted-space">    </span>// --- INITIALIZATION ---</p>
-<p class="p1"><span class="Apple-converted-space">    </span>startBtn.addEventListener('click', async () =&gt; {</p>
-<p class="p1"><span class="Apple-converted-space">      </span>masterOutput = initAudio();</p>
-<p class="p1"><span class="Apple-converted-space">      </span>if (audioCtx.state === 'suspended') await audioCtx.resume();</p>
-<p class="p2"><span class="Apple-converted-space">      </span></p>
-<p class="p1"><span class="Apple-converted-space">      </span>document.getElementById('start-screen').style.display = 'none';</p>
-<p class="p1"><span class="Apple-converted-space">      </span>document.getElementById('ar-container').style.display = 'block';</p>
-<p class="p1"><span class="Apple-converted-space">      </span>window.dispatchEvent(new Event('resize'));</p>
-<p class="p1"><span class="Apple-converted-space">      </span>setupShapes();</p>
-<p class="p1"><span class="Apple-converted-space">    </span>});</p>
-<p class="p2"><br></p>
-<p class="p1"><span class="Apple-converted-space">    </span>let shapes = [], trajectories = [], startTime, lastIdx = -1;</p>
-<p class="p2"><br></p>
-<p class="p1"><span class="Apple-converted-space">    </span>function setupShapes() {</p>
-<p class="p1"><span class="Apple-converted-space">      </span>const group = document.getElementById('ar-objects').object3D;</p>
-<p class="p1"><span class="Apple-converted-space">      </span>const mat = (t) =&gt; new THREE.MeshStandardMaterial({ map: t });</p>
-<p class="p2"><span class="Apple-converted-space">      </span></p>
-<p class="p1"><span class="Apple-converted-space">      </span>const s1 = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), mat(makeLinearTexture('#fff','#000',['SPACE','TIME'],120)));</p>
-<p class="p1"><span class="Apple-converted-space">      </span>const s2 = new THREE.Mesh(new THREE.BoxGeometry(1.5,1.5,1.5), mat(makeLinearTexture('#ff69b4','#000',['IDEA'],120)));</p>
-<p class="p1"><span class="Apple-converted-space">      </span>const s3 = new THREE.Mesh(new THREE.TorusGeometry(1, 0.4), mat(makeLinearTexture('#ff6600','#000',['GO'],120)));</p>
-<p class="p2"><br></p>
-<p class="p1"><span class="Apple-converted-space">      </span>shapes = [s1, s2, s3];</p>
-<p class="p1"><span class="Apple-converted-space">      </span>trajectories = [{x:8, z:-20}, {x:-8, z:-20}, {x:0, z:-10}]; // Simplied paths: Right, Left, Center</p>
-<p class="p2"><span class="Apple-converted-space">      </span></p>
-<p class="p1"><span class="Apple-converted-space">      </span>shapes.forEach(s =&gt; { s.visible = false; group.add(s); });</p>
-<p class="p1"><span class="Apple-converted-space">      </span>group.add(new THREE.AmbientLight(0xffffff, 1.2));</p>
-<p class="p2"><span class="Apple-converted-space">      </span></p>
-<p class="p1"><span class="Apple-converted-space">      </span>animate();</p>
-<p class="p1"><span class="Apple-converted-space">    </span>}</p>
-<p class="p2"><br></p>
-<p class="p1"><span class="Apple-converted-space">    </span>function animate() {</p>
-<p class="p1"><span class="Apple-converted-space">      </span>requestAnimationFrame(animate);</p>
-<p class="p1"><span class="Apple-converted-space">      </span>if (!startTime) startTime = performance.now();</p>
-<p class="p1"><span class="Apple-converted-space">      </span>const elapsed = (performance.now() - startTime) % 30000;</p>
-<p class="p1"><span class="Apple-converted-space">      </span>const idx = Math.floor(elapsed / 10000);</p>
-<p class="p1"><span class="Apple-converted-space">      </span>const t = (elapsed % 10000) / 10000;</p>
-<p class="p2"><br></p>
-<p class="p1"><span class="Apple-converted-space">      </span>shapes.forEach((s, i) =&gt; s.visible = (i === idx));</p>
-<p class="p1"><span class="Apple-converted-space">      </span>const s = shapes[idx];</p>
-<p class="p1"><span class="Apple-converted-space">      </span>const traj = trajectories[idx];</p>
-<p class="p2"><span class="Apple-converted-space">      </span></p>
-<p class="p1"><span class="Apple-converted-space">      </span>// Animation Logic</p>
-<p class="p1"><span class="Apple-converted-space">      </span>s.position.z = -25 + (t * 30);</p>
-<p class="p1"><span class="Apple-converted-space">      </span>s.position.x = (t &gt; 0.3) ? (t-0.3) * traj.x : 0;</p>
-<p class="p1"><span class="Apple-converted-space">      </span>s.rotation.y += 0.02;</p>
-<p class="p1"><span class="Apple-converted-space">      </span>s.scale.setScalar(0.5 + t * 4);</p>
-<p class="p1"><span class="Apple-converted-space">    </span>}</p>
-<p class="p1"><span class="Apple-converted-space">  </span>&lt;/script&gt;</p>
-<p class="p1">&lt;/body&gt;</p>
-<p class="p1">&lt;/html&gt;</p>
+  <div id="start-screen">
+    <p>Point your camera<br/>at the marker<br/>to begin</p>
+    <button id="start-btn">activate camera</button>
+  </div>
+  <div id="info">space time</div>
+
+  <div id="ar-container">
+    <a-scene 
+      embedded 
+      arjs="sourceType: webcam; debugUIEnabled: false;" 
+      vr-mode-ui="enabled: false"
+      loading-screen="enabled: false">
+      
+      <a-marker id="main-marker" type="pattern" url="heromarketer2.patt">
+        <a-entity id="ar-objects"></a-entity>
+      </a-marker>
+
+      <a-entity camera></a-entity>
+    </a-scene>
+  </div>
+
+  <script>
+    // --- AUDIO & TEXTURE LOGIC FROM ORIGINAL FILE ---
+    let audioCtx, shapeSound, masterOutput;
+    const startBtn = document.getElementById('start-btn');
+
+    function initAudio() {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const limiter = audioCtx.createDynamicsCompressor();
+      limiter.threshold.value = -1; 
+      limiter.connect(audioCtx.destination);
+      const droneGain = audioCtx.createGain();
+      droneGain.gain.value = 0.20;
+      [[55,'sine'],[55.5,'sine'],[82.4,'triangle']].forEach(([f, t]) => {
+        const o = audioCtx.createOscillator(); o.type = t; o.frequency.value = f;
+        o.connect(droneGain); o.start();
+      });
+      droneGain.connect(limiter);
+      return limiter;
+    }
+
+    function makeLinearTexture(bg, fg, words, fontSize) {
+      const size = 1024;
+      const c = document.createElement('canvas'); c.width = size; c.height = size;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, size, size);
+      ctx.font = `900 ${fontSize}px Arial Black`; ctx.fillStyle = fg;
+      words.forEach((w, i) => ctx.fillText(w, 50, 200 + i * 200));
+      return new THREE.CanvasTexture(c);
+    }
+
+    // --- INITIALIZATION ---
+    startBtn.addEventListener('click', async () => {
+      masterOutput = initAudio();
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
+      
+      document.getElementById('start-screen').style.display = 'none';
+      document.getElementById('ar-container').style.display = 'block';
+      window.dispatchEvent(new Event('resize'));
+      setupShapes();
+    });
+
+    let shapes = [], trajectories = [], startTime, lastIdx = -1;
+
+    function setupShapes() {
+      const group = document.getElementById('ar-objects').object3D;
+      const mat = (t) => new THREE.MeshStandardMaterial({ map: t });
+      
+      const s1 = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), mat(makeLinearTexture('#fff','#000',['SPACE','TIME'],120)));
+      const s2 = new THREE.Mesh(new THREE.BoxGeometry(1.5,1.5,1.5), mat(makeLinearTexture('#ff69b4','#000',['IDEA'],120)));
+      const s3 = new THREE.Mesh(new THREE.TorusGeometry(1, 0.4), mat(makeLinearTexture('#ff6600','#000',['GO'],120)));
+
+      shapes = [s1, s2, s3];
+      trajectories = [{x:8, z:-20}, {x:-8, z:-20}, {x:0, z:-10}]; // Simplied paths: Right, Left, Center
+      
+      shapes.forEach(s => { s.visible = false; group.add(s); });
+      group.add(new THREE.AmbientLight(0xffffff, 1.2));
+      
+      animate();
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      if (!startTime) startTime = performance.now();
+      const elapsed = (performance.now() - startTime) % 30000;
+      const idx = Math.floor(elapsed / 10000);
+      const t = (elapsed % 10000) / 10000;
+
+      shapes.forEach((s, i) => s.visible = (i === idx));
+      const s = shapes[idx];
+      const traj = trajectories[idx];
+      
+      // Animation Logic
+      s.position.z = -25 + (t * 30);
+      s.position.x = (t > 0.3) ? (t-0.3) * traj.x : 0;
+      s.rotation.y += 0.02;
+      s.scale.setScalar(0.5 + t * 4);
+    }
+  </script>
 </body>
 </html>
