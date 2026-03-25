@@ -1,434 +1,155 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
-  <title>Space Time AR</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
-    #arjs-video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
-    #start-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 48px; }
-    #start-screen p { font-family: 'Helvetica Neue', Helvetica, sans-serif; font-weight: 300; color: rgba(255,255,255,0.9); font-size: 14px; letter-spacing: 3px; text-transform: uppercase; text-align: center; padding: 0 60px; line-height: 2.8; }
-    #start-btn { font-family: 'Helvetica Neue', Helvetica, sans-serif; font-weight: 400; font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: #000; background: #fff; border: none; padding: 18px 48px; cursor: pointer; transition: opacity 0.4s; }
-    #start-btn:active { opacity: 0.6; }
-    #info { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); font-family: 'Helvetica Neue', Helvetica, sans-serif; font-weight: 300; font-size: 10px; letter-spacing: 3px; color: rgba(255,255,255,0.3); text-transform: uppercase; z-index: 5; text-align: center; pointer-events: none; display: none; }
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta http-equiv="Content-Style-Type" content="text/css">
+  <title></title>
+  <meta name="Generator" content="Cocoa HTML Writer">
+  <meta name="CocoaVersion" content="2575.4">
+  <style type="text/css">
+    p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica}
+    p.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica; min-height: 14.0px}
   </style>
 </head>
 <body>
-  <div id="start-screen">
-    <p>Point your camera<br/>at the marker<br/>to begin</p>
-    <button id="start-btn" onclick="startAR()">activate camera</button>
-  </div>
-  <div id="info">space time</div>
-
-  <!-- AR.js libraries -->
-  <script src="https://cdn.jsdelivr.net/gh/aframevr/aframe@1c2407b26c61958baa93967b5412487cd94b290b/dist/aframe-master.min.js"></script>
-  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-
-  <script>
-    // ─── AUDIO ENGINE ─────────────────────────────────────────────────────────────
-    let audioCtx = null;
-    let shapeSound = null;
-    let masterOutput = null;
-
-    function initAudio() {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-      // Adjusted limiter threshold for better speaker output
-      const limiter = audioCtx.createDynamicsCompressor();
-      limiter.threshold.value = -1; 
-      limiter.knee.value = 3;
-      limiter.ratio.value = 20; 
-      limiter.attack.value = 0.001; 
-      limiter.release.value = 0.1;
-      limiter.connect(audioCtx.destination);
-
-      // Ambient drone — three detuned oscillators through reverb
-      const droneGain = audioCtx.createGain();
-      droneGain.gain.value = 0.0;
-      const convolver = audioCtx.createConvolver();
-      convolver.buffer = makeReverb(audioCtx, 3.5, 2.0);
-
-      [[55,'sine'],[55.5,'sine'],[82.4,'triangle']].forEach(([freq, type]) => {
-        const o = audioCtx.createOscillator(); 
-        o.type = type; 
-        o.frequency.value = freq;
-        o.connect(droneGain); 
-        o.start();
-      });
-
-      droneGain.connect(convolver); 
-      convolver.connect(limiter);
-      droneGain.connect(limiter);
-      // Increased drone volume for device speakers
-      droneGain.gain.setTargetAtTime(0.20, audioCtx.currentTime, 2.5);
-
-      // Diagnostic beep to confirm audio routing
-      const testOsc = audioCtx.createOscillator();
-      const testGain = audioCtx.createGain();
-      testGain.gain.value = 0.3;
-      testOsc.connect(testGain);
-      testGain.connect(limiter);
-      testOsc.frequency.value = 440;
-      testOsc.start();
-      testOsc.stop(audioCtx.currentTime + 0.15);
-
-      return limiter;
-    }
-
-    function makeReverb(ctx, duration, decay) {
-      const rate = ctx.sampleRate, length = rate * duration;
-      const impulse = ctx.createBuffer(2, length, rate);
-      for (let ch = 0; ch < 2; ch++) {
-        const data = impulse.getChannelData(ch);
-        for (let i = 0; i < length; i++)
-          data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
-      }
-      return impulse;
-    }
-
-    // One sound config per shape
-    const shapeSoundConfigs = [
-      { freq: 220,   type: 'sine',     filterFreq: 800  }, // 1. sphere      — A3 open
-      { freq: 174.6, type: 'square',   filterFreq: 600  }, // 2. cube        — F3 buzzy
-      { freq: 261.6, type: 'triangle', filterFreq: 1200 }, // 3. pyramid     — C4 clear
-      { freq: 196.0, type: 'sine',     filterFreq: 900  }, // 4. torus       — G3 round
-      { freq: 293.7, type: 'triangle', filterFreq: 1400 }, // 5. icosahedron — D4 bright
-      { freq: 130.8, type: 'square',   filterFreq: 500  }, // 6. torus knot  — C3 deep
-    ];
-
-    function startShapeSound(index) {
-      if (!audioCtx) return;
-      stopShapeSound();
-      const cfg = shapeSoundConfigs[index];
-      if (!cfg) return;
-
-      const gain = audioCtx.createGain(); 
-      gain.gain.value = 0.0;
-      const osc = audioCtx.createOscillator(); 
-      osc.type = cfg.type; 
-      osc.frequency.value = cfg.freq;
-      const subOsc = audioCtx.createOscillator(); 
-      subOsc.type = 'sine'; 
-      subOsc.frequency.value = cfg.freq / 2;
-      const subGain = audioCtx.createGain(); 
-      subGain.gain.value = 0.4; 
-      subOsc.connect(subGain);
-      const filter = audioCtx.createBiquadFilter(); 
-      filter.type = 'lowpass';
-      filter.frequency.value = cfg.filterFreq; 
-      filter.Q.value = 2.0;
-      osc.connect(filter); 
-      subGain.connect(filter); 
-      filter.connect(gain); 
-      gain.connect(masterOutput);
-      osc.start(); 
-      subOsc.start();
-      shapeSound = { osc, subOsc, gain };
-    }
-
-    function setShapeSoundVolume(t) {
-      if (!shapeSound || !audioCtx) return;
-      // Increased peak volume for device speakers
-      let vol;
-      if (t < 0.6)      vol = (t / 0.6) * 0.45;
-      else if (t < 0.8) vol = 0.45;
-      else              vol = ((1 - t) / 0.2) * 0.45;
-      shapeSound.gain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
-    }
-
-    function stopShapeSound() {
-      if (!shapeSound || !audioCtx) return;
-      try {
-        shapeSound.gain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.3);
-        const s = shapeSound;
-        setTimeout(() => { try { s.osc.stop(); s.subOsc.stop(); } catch(e){} }, 600);
-      } catch(e) {}
-      shapeSound = null;
-    }
-
-    // ─── TEXTURE FACTORY ──────────────────────────────────────────────────────────
-    function makeLinearTexture(bg, fg, words, seed0, fontSize, lineH, gap) {
-      const size = 2048;
-      const c = document.createElement('canvas'); 
-      c.width = size; 
-      c.height = size;
-      const ctx = c.getContext('2d');
-      ctx.fillStyle = bg; 
-      ctx.fillRect(0, 0, size, size);
-      ctx.font = `900 ${fontSize}px Arial Black, sans-serif`; 
-      ctx.fillStyle = fg;
-      let seed = seed0;
-      function rand() { 
-        seed = (seed * 1664525 + 1013904223) & 0xffffffff; 
-        return (seed >>> 0) / 0xffffffff; 
-      }
-      let y = lineH;
-      while (y < size + lineH) {
-        let x = 0;
-        while (x < size + 500) {
-          const word = words[Math.floor(rand() * words.length)];
-          ctx.fillText(word, x, y);
-          x += ctx.measureText(word).width + gap;
-        }
-        y += lineH;
-      }
-      return new THREE.CanvasTexture(c);
-    }
-
-    // ─── TEXTURES ─────────────────────────────────────────────────────────────────
-    function makeSpaceTimeTexture()  { return makeLinearTexture('#ffffff', '#000000', ['SPACE','TIME'],          137, 80, 100, 0);  }
-    function makeIdeaTexture()       { return makeLinearTexture('#ff69b4', '#000000', ['IDEA','NO IDEA'],        291, 75, 100, 20); }
-    function makePlusMinusTexture()  { return makeLinearTexture('#1a7a1a', '#000000', ['+','−'],                  42, 72,  88, 10); }
-    function makeWaitGoTexture()     { return makeLinearTexture('#ff6600', '#000000', ['WAIT','GO'],              77, 80, 100, 20); }
-    function makeSmileTexture()      { return makeLinearTexture('#ffe600', '#000000', ['\u{1F642}','\u{1F641}'], 199, 80, 100, 24); }
-    function makeKnowTexture()       { return makeLinearTexture('#0a0a4a', '#ffffff', ['KNOW',"DON'T KNOW"],     333, 62, 100, 20); }
-
-    // ─── PYRAMID MESH (custom geometry) ───────────────────────────────────────────
-    function makePyramidMesh(tex) {
-      const geo = new THREE.BufferGeometry(); 
-      const h = 2.2, b = 1.2;
-      const vertices = new Float32Array([0,h,0,-b,0,b,b,0,b, 0,h,0,b,0,b,b,0,-b, 0,h,0,b,0,-b,-b,0,-b, 0,h,0,-b,0,-b,-b,0,b, -b,0,b,-b,0,-b,b,0,b, b,0,b,-b,0,-b,b,0,-b]);
-      const uvs = new Float32Array([0.5,1,0,0,1,0, 0.5,1,0,0,1,0, 0.5,1,0,0,1,0, 0.5,1,0,0,1,0, 0,0,0,1,1,0, 1,0,0,1,1,1]);
-      geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-      geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-      geo.computeVertexNormals();
-      return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05, side: THREE.DoubleSide }));
-    }
-
-    function mat(tex) { 
-      return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05 }); 
-    }
-
-    // ─── AR.js SETUP ──────────────────────────────────────────────────────────────
-    let arScene = null;
-    let markerRoot = null;
-    let shapes = [];
-    let rotSpeeds = [];
-    let trajectories = [];
-    let startTime = null;
-    let lastShapeIndex = -1;
-
-    async function startAR() {
-      document.getElementById('start-screen').style.display = 'none';
-      document.getElementById('info').style.display = 'block';
-
-      // Initialize audio
-      masterOutput = initAudio();
-      
-      // Explicitly resume AudioContext for iOS/Safari speaker output
-      if (audioCtx && audioCtx.state === 'suspended') {
-        await audioCtx.resume();
-      }
-
-      initARScene();
-    }
-
-    function initARScene() {
-      // Create A-Frame scene
-      const sceneEl = document.createElement('a-scene');
-      sceneEl.setAttribute('embedded', '');
-      sceneEl.setAttribute('arjs', 'sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;');
-      sceneEl.setAttribute('vr-mode-ui', 'enabled: false');
-      sceneEl.setAttribute('renderer', 'logarithmicDepthBuffer: true; precision: medium;');
-      document.body.appendChild(sceneEl);
-
-      // Wait for scene to load
-      sceneEl.addEventListener('loaded', function() {
-        arScene = sceneEl.sceneEl;
-        
-        // Get Three.js scene, camera, renderer from A-Frame
-        const scene = arScene.object3D;
-        const camera = arScene.camera;
-        const renderer = arScene.renderer;
-
-        // Create marker
-        const markerEl = document.createElement('a-marker');
-        markerEl.setAttribute('type', 'pattern');
-        markerEl.setAttribute('url', 'heromarketer2.patt'); // Pattern file generated from heromarketer2.png
-        sceneEl.appendChild(markerEl);
-
-        // Create a Three.js group to hold our shapes
-        markerRoot = new THREE.Group();
-        markerEl.object3D.add(markerRoot);
-
-        // Add lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
-        markerRoot.add(ambientLight);
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(3, 5, 3);
-        markerRoot.add(directionalLight);
-
-        // Create shapes
-        const sphere    = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 64),             mat(makeSpaceTimeTexture()));
-        const cube      = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6),            mat(makeIdeaTexture()));
-        const pyramid   = makePyramidMesh(makePlusMinusTexture());
-        const torus     = new THREE.Mesh(new THREE.TorusGeometry(1, 0.38, 32, 100),       mat(makeWaitGoTexture()));
-        const icosa     = new THREE.Mesh(new THREE.IcosahedronGeometry(1.1, 1),           mat(makeSmileTexture()));
-        const torusKnot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.9, 0.3, 120, 16), mat(makeKnowTexture()));
-
-        shapes = [sphere, cube, pyramid, torus, icosa, torusKnot];
-
-        rotSpeeds = [
-          { x:0.005, y:0.008, z:0.003 },
-          { x:0.009, y:0.006, z:0.004 },
-          { x:0.002, y:0.007, z:0.001 },
-          { x:0.006, y:0.010, z:0.002 },
-          { x:0.007, y:0.005, z:0.006 },
-          { x:0.004, y:0.009, z:0.005 },
-        ];
-
-        // NEW TRAJECTORY PATTERN: Right arc, Left arc, Center (fills screen), then repeat
-        // Pattern repeats every 3 shapes
-        trajectories = [
-          { type: 'right',  xCurve: 12,  yDrift: 0.5  }, // Shape 1: arc to right
-          { type: 'left',   xCurve: -12, yDrift: 0.5  }, // Shape 2: arc to left
-          { type: 'center', xCurve: 0,   yDrift: 0    }, // Shape 3: stay centered, fill screen
-          { type: 'right',  xCurve: 11,  yDrift: -0.8 }, // Shape 4: arc to right (repeat)
-          { type: 'left',   xCurve: -11, yDrift: -0.8 }, // Shape 5: arc to left (repeat)
-          { type: 'center', xCurve: 0,   yDrift: 0    }, // Shape 6: stay centered (repeat)
-        ];
-
-        shapes.forEach(s => { 
-          s.visible = false; 
-          markerRoot.add(s); 
-        });
-
-        // Start animation loop
-        animate();
-      });
-
-      // Add camera entity
-      const cameraEl = document.createElement('a-entity');
-      cameraEl.setAttribute('camera', '');
-      sceneEl.appendChild(cameraEl);
-    }
-
-    const FAR_Z = -25;
-    const NEAR_Z = 2.5;
-    const SHAPE_DURATION = 14000;
-    const TOTAL_CYCLE = SHAPE_DURATION * shapes.length;
-
-    function easeInOut(t) { 
-      return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; 
-    }
-
-    function easeOutQuad(t) {
-      return 1 - (1 - t) * (1 - t);
-    }
-
-    // Calculate position with new trajectory pattern
-    function calculatePosition(t, trajectory) {
-      const eased = easeInOut(t);
-      
-      // Z-axis movement (depth)
-      let z;
-      if (trajectory.type === 'center') {
-        // Center type: comes very close, fills screen
-        if (t < 0.5) {
-          z = FAR_Z + (NEAR_Z + 5) * easeOutQuad(t / 0.5); // Approach even closer
-        } else if (t < 0.8) {
-          z = NEAR_Z + 5; // Hold close position
-        } else {
-          const exitProgress = (t - 0.8) / 0.2;
-          z = (NEAR_Z + 5) + exitProgress * 10; // Quick exit through camera
-        }
-      } else {
-        // Right/Left arc types
-        if (t < 0.7) {
-          z = FAR_Z + (NEAR_Z - FAR_Z) * eased;
-        } else {
-          const exitProgress = (t - 0.7) / 0.3;
-          z = NEAR_Z + exitProgress * 8;
-        }
-      }
-
-      // X-axis movement (horizontal)
-      let x = 0;
-      if (trajectory.type === 'right') {
-        // Smooth arc to the right
-        if (t < 0.3) {
-          x = 0; // Start centered
-        } else if (t < 0.7) {
-          const arcProgress = (t - 0.3) / 0.4;
-          x = easeOutQuad(arcProgress) * trajectory.xCurve * 0.5;
-        } else {
-          const exitProgress = (t - 0.7) / 0.3;
-          x = trajectory.xCurve * 0.5 + (exitProgress * exitProgress) * trajectory.xCurve;
-        }
-      } else if (trajectory.type === 'left') {
-        // Smooth arc to the left
-        if (t < 0.3) {
-          x = 0; // Start centered
-        } else if (t < 0.7) {
-          const arcProgress = (t - 0.3) / 0.4;
-          x = easeOutQuad(arcProgress) * trajectory.xCurve * 0.5;
-        } else {
-          const exitProgress = (t - 0.7) / 0.3;
-          x = trajectory.xCurve * 0.5 + (exitProgress * exitProgress) * trajectory.xCurve;
-        }
-      } else {
-        // Center: stays at x=0
-        x = 0;
-      }
-
-      // Y-axis movement (vertical)
-      let y = 0;
-      if (trajectory.type !== 'center' && Math.abs(trajectory.yDrift) > 0.1) {
-        if (t < 0.7) {
-          y = (t / 0.7) * 0.3 * trajectory.yDrift;
-        } else {
-          const exitProgress = (t - 0.7) / 0.3;
-          y = 0.3 * trajectory.yDrift + exitProgress * trajectory.yDrift;
-        }
-      }
-
-      return { x, y, z };
-    }
-
-    function animate() {
-      if (!arScene || !shapes.length) return;
-      
-      requestAnimationFrame(animate);
-      
-      const timestamp = performance.now();
-      if (!startTime) startTime = timestamp;
-      
-      const elapsed = (timestamp - startTime) % TOTAL_CYCLE;
-      const shapeIndex = Math.floor(elapsed / SHAPE_DURATION);
-      const t = (elapsed % SHAPE_DURATION) / SHAPE_DURATION;
-
-      if (shapeIndex !== lastShapeIndex) {
-        lastShapeIndex = shapeIndex;
-        startShapeSound(shapeIndex);
-      }
-
-      shapes.forEach((s, i) => { 
-        s.visible = i === shapeIndex; 
-      });
-      
-      const current = shapes[shapeIndex];
-      const trajectory = trajectories[shapeIndex];
-      const pos = calculatePosition(t, trajectory);
-      current.position.set(pos.x, pos.y, pos.z);
-      
-      // Scale adjustment for center type (fills screen more)
-      const eased = easeInOut(t);
-      if (trajectory.type === 'center') {
-        current.scale.setScalar(0.04 + 5.5 * eased); // Larger scale for center
-      } else {
-        current.scale.setScalar(0.04 + 3.5 * eased);
-      }
-      
-      const r = rotSpeeds[shapeIndex];
-      current.rotation.x += r.x; 
-      current.rotation.y += r.y; 
-      current.rotation.z += r.z;
-
-      setShapeSoundVolume(t);
-    }
-  </script>
+<p class="p1">&lt;!DOCTYPE html&gt;</p>
+<p class="p1">&lt;html lang="en"&gt;</p>
+<p class="p1">&lt;head&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;meta charset="UTF-8"/&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;title&gt;Space Time AR - Hiro Test&lt;/title&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;style&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>* { margin: 0; padding: 0; box-sizing: border-box; }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#arjs-video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#start-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 48px; }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#start-screen p { font-family: 'Helvetica Neue', Helvetica, sans-serif; font-weight: 300; color: rgba(255,255,255,0.9); font-size: 14px; letter-spacing: 3px; text-transform: uppercase; text-align: center; padding: 0 60px; line-height: 2.8; }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#start-btn { font-family: 'Helvetica Neue', Helvetica, sans-serif; font-weight: 400; font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: #000; background: #fff; border: none; padding: 18px 48px; cursor: pointer; transition: opacity 0.4s; }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#start-btn:active { opacity: 0.6; }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>#info { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); font-family: 'Helvetica Neue', Helvetica, sans-serif; font-weight: 300; font-size: 10px; letter-spacing: 3px; color: rgba(255,255,255,0.3); text-transform: uppercase; z-index: 5; text-align: center; pointer-events: none; display: none; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;/style&gt;</p>
+<p class="p1">&lt;/head&gt;</p>
+<p class="p1">&lt;body&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;div id="start-screen"&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;p&gt;Point your camera&lt;br/&gt;at the Hiro marker&lt;br/&gt;to begin&lt;/p&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>&lt;button id="start-btn" onclick="startAR()"&gt;activate camera&lt;/button&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;/div&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;div id="info"&gt;space time&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;script src="https://cdn.jsdelivr.net/gh/aframevr/aframe@1c2407b26c61958baa93967b5412487cd94b290b/dist/aframe-master.min.js"&gt;&lt;/script&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"&gt;&lt;/script&gt;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;script&gt;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>let audioCtx = null, shapeSound = null, masterOutput = null;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>function initAudio() {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>audioCtx = new (window.AudioContext || window.webkitAudioContext)();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const limiter = audioCtx.createDynamicsCompressor();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>limiter.threshold.value = -1;<span class="Apple-converted-space"> </span></p>
+<p class="p1"><span class="Apple-converted-space">      </span>limiter.connect(audioCtx.destination);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const droneGain = audioCtx.createGain();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>droneGain.gain.value = 0.0;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>[[55,'sine'],[55.5,'sine'],[82.4,'triangle']].forEach(([freq, type]) =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>const o = audioCtx.createOscillator();<span class="Apple-converted-space"> </span></p>
+<p class="p1"><span class="Apple-converted-space">        </span>o.type = type; o.frequency.value = freq;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>o.connect(droneGain); o.start();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>});</p>
+<p class="p1"><span class="Apple-converted-space">      </span>droneGain.connect(limiter);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>droneGain.gain.setTargetAtTime(0.20, audioCtx.currentTime, 2.5);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>return limiter;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>const shapeSoundConfigs = [</p>
+<p class="p1"><span class="Apple-converted-space">      </span>{ freq: 220, type: 'sine', filterFreq: 800 }, { freq: 174.6, type: 'square', filterFreq: 600 },</p>
+<p class="p1"><span class="Apple-converted-space">      </span>{ freq: 261.6, type: 'triangle', filterFreq: 1200 }, { freq: 196.0, type: 'sine', filterFreq: 900 },</p>
+<p class="p1"><span class="Apple-converted-space">      </span>{ freq: 293.7, type: 'triangle', filterFreq: 1400 }, { freq: 130.8, type: 'square', filterFreq: 500 }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>];</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>function startShapeSound(index) {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (!audioCtx) return;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>stopShapeSound();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const cfg = shapeSoundConfigs[index];</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const gain = audioCtx.createGain(); gain.gain.value = 0.0;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const osc = audioCtx.createOscillator(); osc.type = cfg.type; osc.frequency.value = cfg.freq;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = cfg.filterFreq;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>osc.connect(filter); filter.connect(gain); gain.connect(masterOutput);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>osc.start(); shapeSound = { osc, gain };</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>function setShapeSoundVolume(t) {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (!shapeSound) return;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>let vol = (t &lt; 0.6) ? (t / 0.6) * 0.45 : (t &lt; 0.8) ? 0.45 : ((1 - t) / 0.2) * 0.45;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>shapeSound.gain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>function stopShapeSound() {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (shapeSound) { try { shapeSound.osc.stop(); } catch(e) {} shapeSound = null; }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>function makeLinearTexture(bg, fg, words, fontSize) {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const size = 1024;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const c = document.createElement('canvas'); c.width = size; c.height = size;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const ctx = c.getContext('2d');</p>
+<p class="p1"><span class="Apple-converted-space">      </span>ctx.fillStyle = bg; ctx.fillRect(0, 0, size, size);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>ctx.font = `bold ${fontSize}px Arial`; ctx.fillStyle = fg;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>words.forEach((w, i) =&gt; ctx.fillText(w, 50, 150 + i * 150));</p>
+<p class="p1"><span class="Apple-converted-space">      </span>return new THREE.CanvasTexture(c);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>let arScene, markerRoot, shapes = [], startTime = null, lastShapeIndex = -1;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>async function startAR() {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>document.getElementById('start-screen').style.display = 'none';</p>
+<p class="p1"><span class="Apple-converted-space">      </span>document.getElementById('info').style.display = 'block';</p>
+<p class="p1"><span class="Apple-converted-space">      </span>masterOutput = initAudio();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (audioCtx.state === 'suspended') await audioCtx.resume();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>initARScene();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>function initARScene() {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const sceneEl = document.createElement('a-scene');</p>
+<p class="p1"><span class="Apple-converted-space">      </span>sceneEl.setAttribute('embedded', '');</p>
+<p class="p1"><span class="Apple-converted-space">      </span>sceneEl.setAttribute('arjs', 'sourceType: webcam; debugUIEnabled: false;');</p>
+<p class="p1"><span class="Apple-converted-space">      </span>document.body.appendChild(sceneEl);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">      </span>sceneEl.addEventListener('loaded', () =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>const markerEl = document.createElement('a-marker');</p>
+<p class="p1"><span class="Apple-converted-space">        </span>// --- CHANGE IS HERE ---</p>
+<p class="p1"><span class="Apple-converted-space">        </span>markerEl.setAttribute('preset', 'hiro');<span class="Apple-converted-space"> </span></p>
+<p class="p1"><span class="Apple-converted-space">        </span>// ----------------------</p>
+<p class="p1"><span class="Apple-converted-space">        </span>sceneEl.appendChild(markerEl);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">        </span>markerRoot = new THREE.Group();</p>
+<p class="p1"><span class="Apple-converted-space">        </span>markerEl.object3D.add(markerRoot);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>markerRoot.add(new THREE.AmbientLight(0xffffff, 1.0));</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">        </span>const mat = (tex) =&gt; new THREE.MeshStandardMaterial({ map: tex });</p>
+<p class="p1"><span class="Apple-converted-space">        </span>shapes = [</p>
+<p class="p1"><span class="Apple-converted-space">          </span>new THREE.Mesh(new THREE.SphereGeometry(1), mat(makeLinearTexture('#fff','#000',['SPACE','TIME'],100))),</p>
+<p class="p1"><span class="Apple-converted-space">          </span>new THREE.Mesh(new THREE.BoxGeometry(1.5,1.5,1.5), mat(makeLinearTexture('#f0f','#000',['IDEA'],100))),</p>
+<p class="p1"><span class="Apple-converted-space">          </span>new THREE.Mesh(new THREE.TorusGeometry(1, 0.4), mat(makeLinearTexture('#0ff','#000',['GO'],100))),</p>
+<p class="p1"><span class="Apple-converted-space">          </span>new THREE.Mesh(new THREE.IcosahedronGeometry(1.2), mat(makeLinearTexture('#ff0','#000',['SMILE'],100)))</p>
+<p class="p1"><span class="Apple-converted-space">        </span>];</p>
+<p class="p1"><span class="Apple-converted-space">        </span>shapes.forEach(s =&gt; { s.visible = false; markerRoot.add(s); });</p>
+<p class="p1"><span class="Apple-converted-space">        </span>animate();</p>
+<p class="p1"><span class="Apple-converted-space">      </span>});</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const cam = document.createElement('a-entity'); cam.setAttribute('camera',''); sceneEl.appendChild(cam);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>function animate() {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>requestAnimationFrame(animate);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const elapsed = (performance.now() - (startTime || (startTime = performance.now()))) % 40000;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const idx = Math.floor(elapsed / 10000) % shapes.length;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const t = (elapsed % 10000) / 10000;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (idx !== lastShapeIndex) { lastShapeIndex = idx; startShapeSound(idx); }</p>
+<p class="p1"><span class="Apple-converted-space">      </span>shapes.forEach((s, i) =&gt; s.visible = (i === idx));</p>
+<p class="p1"><span class="Apple-converted-space">      </span>shapes[idx].position.z = -15 + (t * 20);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>shapes[idx].rotation.y += 0.01;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>setShapeSoundVolume(t);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>&lt;/script&gt;</p>
+<p class="p1">&lt;/body&gt;</p>
+<p class="p1">&lt;/html&gt;</p>
 </body>
 </html>
