@@ -3,31 +3,40 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
-  <title>Space Time - Sequence v3</title>
+  <title>Space Time - Marker v4</title>
   <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
   <style>
     body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
-    #overlay { 
-      position: fixed; inset: 0; background: #000; z-index: 9999; 
-      display: flex; flex-direction: column; align-items: center; justify-content: center; 
+    #overlay {
+      position: fixed; inset: 0; background: #000; z-index: 9999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 48px;
     }
-    #start-btn { 
-      padding: 20px 40px; background: #fff; border: none; color: #000; 
-      font-weight: bold; text-transform: uppercase; cursor: pointer; letter-spacing: 2px;
+    #overlay p {
+      font-family: 'Helvetica Neue', Helvetica, sans-serif; font-weight: 300;
+      color: rgba(255,255,255,0.9); font-size: 14px; letter-spacing: 3px;
+      text-transform: uppercase; text-align: center; padding: 0 60px; line-height: 2.8;
+    }
+    #start-btn {
+      font-family: 'Helvetica Neue', Helvetica, sans-serif; font-weight: 400;
+      font-size: 12px; letter-spacing: 4px; text-transform: uppercase;
+      color: #000; background: #fff; border: none; padding: 18px 48px; cursor: pointer;
     }
     #instructions {
-      position: fixed; top: 20px; width: 100%; text-align: center;
-      color: #fff; z-index: 1000; text-transform: uppercase; 
-      font-size: 12px; letter-spacing: 2px; pointer-events: none; display: none;
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      font-family: 'Helvetica Neue', Helvetica, sans-serif; font-weight: 300;
+      font-size: 10px; letter-spacing: 3px; color: rgba(255,255,255,0.4);
+      text-transform: uppercase; z-index: 1000; text-align: center;
+      pointer-events: none; display: none;
     }
   </style>
 </head>
 <body>
   <div id="overlay">
+    <p>Point the phone<br/>at the marker<br/>and activate the camera</p>
     <button id="start-btn">activate camera</button>
   </div>
-  <div id="instructions">point and keep the camera focus on the horse</div>
+  <div id="instructions">point camera at the marker</div>
 
   <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false; patternRatio: 0.5;" vr-mode-ui="enabled: false">
     <a-marker id="main-marker" type="pattern" url="heromarketer2.patt">
@@ -37,110 +46,262 @@
   </a-scene>
 
   <script>
-    let audioCtx, startTime;
-    const startBtn = document.getElementById('start-btn');
+    // ─── AUDIO ───────────────────────────────────────────────────────────────────
+    let audioCtx = null, shapeSound = null, masterOutput = null;
 
-    function initAudio() {
-      try {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const droneGain = audioCtx.createGain();
-        droneGain.gain.value = 0.15;
-        [[55,'sine'],[110,'triangle'],[41.2,'sine']].forEach(([f, t]) => {
-          const o = audioCtx.createOscillator(); o.type = t; o.frequency.value = f;
-          o.connect(droneGain); o.start();
-        });
-        droneGain.connect(audioCtx.destination);
-      } catch(e) { console.error("Audio failed", e); }
+    function makeReverb(ctx, duration, decay) {
+      const rate = ctx.sampleRate, length = rate * duration;
+      const impulse = ctx.createBuffer(2, length, rate);
+      for (let ch = 0; ch < 2; ch++) {
+        const data = impulse.getChannelData(ch);
+        for (let i = 0; i < length; i++)
+          data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+      }
+      return impulse;
     }
 
-    function makeTexture(bg, fg, lines) {
-      const c = document.createElement('canvas'); c.width = 512; c.height = 512;
+    function initAudio() {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const limiter = audioCtx.createDynamicsCompressor();
+      limiter.threshold.value = -1; limiter.knee.value = 3;
+      limiter.ratio.value = 20; limiter.attack.value = 0.001; limiter.release.value = 0.1;
+      limiter.connect(audioCtx.destination);
+
+      const droneGain = audioCtx.createGain(); droneGain.gain.value = 0.0;
+      const convolver = audioCtx.createConvolver();
+      convolver.buffer = makeReverb(audioCtx, 3.5, 2.0);
+      [[55,'sine'],[55.5,'sine'],[82.4,'triangle']].forEach(([freq, type]) => {
+        const o = audioCtx.createOscillator(); o.type = type; o.frequency.value = freq;
+        o.connect(droneGain); o.start();
+      });
+      droneGain.connect(convolver); convolver.connect(limiter);
+      droneGain.connect(limiter);
+      droneGain.gain.setTargetAtTime(0.20, audioCtx.currentTime, 2.5);
+
+      const testOsc = audioCtx.createOscillator();
+      const testGain = audioCtx.createGain(); testGain.gain.value = 0.3;
+      testOsc.connect(testGain); testGain.connect(limiter);
+      testOsc.frequency.value = 440; testOsc.start(); testOsc.stop(audioCtx.currentTime + 0.15);
+
+      return limiter;
+    }
+
+    const shapeSoundConfigs = [
+      { freq: 220,   type: 'sine',     filterFreq: 800  },
+      { freq: 174.6, type: 'square',   filterFreq: 600  },
+      { freq: 261.6, type: 'triangle', filterFreq: 1200 },
+      { freq: 196.0, type: 'sine',     filterFreq: 900  },
+      { freq: 293.7, type: 'triangle', filterFreq: 1400 },
+      { freq: 130.8, type: 'square',   filterFreq: 500  },
+    ];
+
+    function startShapeSound(index) {
+      if (!audioCtx) return; stopShapeSound();
+      const cfg = shapeSoundConfigs[index]; if (!cfg) return;
+      const gain = audioCtx.createGain(); gain.gain.value = 0.0;
+      const osc = audioCtx.createOscillator(); osc.type = cfg.type; osc.frequency.value = cfg.freq;
+      const subOsc = audioCtx.createOscillator(); subOsc.type = 'sine'; subOsc.frequency.value = cfg.freq / 2;
+      const subGain = audioCtx.createGain(); subGain.gain.value = 0.4; subOsc.connect(subGain);
+      const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass';
+      filter.frequency.value = cfg.filterFreq; filter.Q.value = 2.0;
+      osc.connect(filter); subGain.connect(filter); filter.connect(gain); gain.connect(masterOutput);
+      osc.start(); subOsc.start();
+      shapeSound = { osc, subOsc, gain };
+    }
+
+    function setShapeSoundVolume(t) {
+      if (!shapeSound || !audioCtx) return;
+      let vol;
+      if (t < 0.6)      vol = (t / 0.6) * 0.45;
+      else if (t < 0.8) vol = 0.45;
+      else              vol = ((1 - t) / 0.2) * 0.45;
+      shapeSound.gain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
+    }
+
+    function stopShapeSound() {
+      if (!shapeSound || !audioCtx) return;
+      try {
+        shapeSound.gain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.3);
+        const s = shapeSound;
+        setTimeout(() => { try { s.osc.stop(); s.subOsc.stop(); } catch(e){} }, 600);
+      } catch(e) {}
+      shapeSound = null;
+    }
+
+    // ─── TEXTURES ────────────────────────────────────────────────────────────────
+    function makeLinearTexture(bg, fg, words, seed0, fontSize, lineH, gap) {
+      const size = 2048;
+      const c = document.createElement('canvas'); c.width = size; c.height = size;
       const ctx = c.getContext('2d');
-      ctx.fillStyle = bg; ctx.fillRect(0,0,512,512);
-      ctx.fillStyle = fg; ctx.font = "bold 50px Arial"; ctx.textAlign = "center";
-      lines.forEach((txt, i) => ctx.fillText(txt, 256, 200 + i*80));
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, size, size);
+      ctx.font = `900 ${fontSize}px Arial Black, sans-serif`; ctx.fillStyle = fg;
+      let seed = seed0;
+      function rand() { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; }
+      let y = lineH;
+      while (y < size + lineH) {
+        let x = 0;
+        while (x < size + 500) {
+          const word = words[Math.floor(rand() * words.length)];
+          ctx.fillText(word, x, y); x += ctx.measureText(word).width + gap;
+        }
+        y += lineH;
+      }
       return new THREE.CanvasTexture(c);
     }
 
-    startBtn.addEventListener('click', () => {
-      initAudio();
+    function makeSpaceTimeTexture() { return makeLinearTexture('#ffffff','#000000',['SPACE','TIME'],          137, 80, 100, 0);  }
+    function makeIdeaTexture()      { return makeLinearTexture('#ff69b4','#000000',['IDEA','NO IDEA'],        291, 75, 100, 20); }
+    function makePlusMinusTexture() { return makeLinearTexture('#1a7a1a','#000000',['+','−'],                  42, 72,  88, 10); }
+    function makeWaitGoTexture()    { return makeLinearTexture('#ff6600','#000000',['WAIT','GO'],              77, 80, 100, 20); }
+    function makeSmileTexture()     { return makeLinearTexture('#ffe600','#000000',['\u{1F642}','\u{1F641}'],199, 80, 100, 24); }
+    function makeKnowTexture()      { return makeLinearTexture('#0a0a4a','#ffffff',['KNOW',"DON'T KNOW"],     333, 62, 100, 20); }
+
+    function mat(tex) {
+      return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05, transparent: true });
+    }
+
+    function makePyramidMesh(tex) {
+      const geo = new THREE.BufferGeometry(); const h = 2.2, b = 1.2;
+      const vertices = new Float32Array([0,h,0,-b,0,b,b,0,b, 0,h,0,b,0,b,b,0,-b, 0,h,0,b,0,-b,-b,0,-b, 0,h,0,-b,0,-b,-b,0,b, -b,0,b,-b,0,-b,b,0,b, b,0,b,-b,0,-b,b,0,-b]);
+      const uvs = new Float32Array([0.5,1,0,0,1,0, 0.5,1,0,0,1,0, 0.5,1,0,0,1,0, 0.5,1,0,0,1,0, 0,0,0,1,1,0, 1,0,0,1,1,1]);
+      geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+      geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+      geo.computeVertexNormals();
+      return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05, transparent: true, side: THREE.DoubleSide }));
+    }
+
+    // ─── SCENE SETUP ─────────────────────────────────────────────────────────────
+    document.getElementById('start-btn').addEventListener('click', async () => {
+      masterOutput = initAudio();
+      if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
       document.getElementById('overlay').style.display = 'none';
       document.getElementById('instructions').style.display = 'block';
       setupScene();
     });
 
-    let shapes = [];
+    let animRunning = false;
+
     function setupScene() {
+      if (animRunning) return;
+      animRunning = true;
+
       const group = document.getElementById('ar-objects').object3D;
-      
-      const list = [
-        { geom: new THREE.SphereGeometry(0.5, 32, 32), bg: '#fff', fg: '#000', txt: ['SPACE','TIME'], id: 'sphere' },
-        { geom: new THREE.BoxGeometry(0.6, 0.6, 0.6), bg: '#ff00ff', fg: '#fff', txt: ['WAIT','GO'], id: 'cube' },
-        { geom: new THREE.TorusGeometry(0.5, 0.15, 16, 100), bg: '#00ffff', fg: '#000', txt: ['KNOW','DON\'T KNOW'], id: 'donut' },
-        { geom: new THREE.TorusKnotGeometry(0.4, 0.1, 100, 16), bg: '#6a0dad', fg: '#fff', txt: ['?','?','?'], id: 'knot' }
+      group.add(new THREE.AmbientLight(0xffffff, 1.2));
+      const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(3, 5, 3); group.add(dir);
+
+      // Scale factor: AR.js marker units are roughly 1 unit = marker width.
+      // Objects travel "up" out of the marker in the marker's local Y-axis.
+      // We use the marker's local coordinate space: Y is up from marker surface.
+      // FAR_Y = starting point well behind marker plane, NEAR_Y = close to camera.
+      const FAR_Y = -0.1;   // just at/below the marker surface
+      const NEAR_Y = 4.0;   // well above marker (toward camera)
+      const SHAPE_DURATION = 14000;
+
+      const sphere    = new THREE.Mesh(new THREE.SphereGeometry(0.4, 64, 64),            mat(makeSpaceTimeTexture()));
+      const cube      = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6),             mat(makeIdeaTexture()));
+      const pyramid   = makePyramidMesh(makePlusMinusTexture());
+      const torus     = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.15, 32, 100),      mat(makeWaitGoTexture()));
+      const icosa     = new THREE.Mesh(new THREE.IcosahedronGeometry(0.44, 1),           mat(makeSmileTexture()));
+      const torusKnot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.36, 0.12, 120, 16),mat(makeKnowTexture()));
+
+      const shapes = [sphere, cube, pyramid, torus, icosa, torusKnot];
+
+      const rotSpeeds = [
+        { x:0.005, y:0.008, z:0.003 },
+        { x:0.009, y:0.006, z:0.004 },
+        { x:0.002, y:0.007, z:0.001 },
+        { x:0.006, y:0.010, z:0.002 },
+        { x:0.007, y:0.005, z:0.006 },
+        { x:0.004, y:0.009, z:0.005 },
       ];
 
-      shapes = list.map(conf => {
-        const mat = new THREE.MeshStandardMaterial({ 
-          map: makeTexture(conf.bg, conf.fg, conf.txt), 
-          transparent: true,
-          side: THREE.DoubleSide
-        });
-        const mesh = new THREE.Mesh(conf.geom, mat);
-        mesh.visible = false;
-        group.add(mesh);
-        return { mesh, id: conf.id };
-      });
+      // Trajectories adapted to marker local space.
+      // xCurve / zCurve = lateral drift on marker plane; yDrift = vertical bias.
+      const trajectories = [
+        { xCurve: -1.8, zCurve:  0.5, yDrift:  0.3 },  // sphere
+        { xCurve:  1.6, zCurve: -0.4, yDrift: -0.2 },  // cube
+        { xCurve: -1.4, zCurve: -0.6, yDrift: -0.3 },  // pyramid
+        { xCurve:  2.0, zCurve:  0.3, yDrift:  0.2 },  // torus
+        { xCurve: -2.2, zCurve:  0.1, yDrift:  0.1 },  // icosahedron
+        { xCurve:  1.2, zCurve: -0.2, yDrift: -0.1 },  // torus knot
+      ];
 
-      group.add(new THREE.AmbientLight(0xffffff, 2.5));
-      animate();
-    }
+      shapes.forEach(s => { s.visible = false; group.add(s); });
 
-    function animate() {
-      requestAnimationFrame(animate);
-      if (!startTime) startTime = performance.now();
-      const duration = 7000; // 7 seconds per object
-      const totalElapsed = (performance.now() - startTime) % (duration * shapes.length);
-      const idx = Math.floor(totalElapsed / duration);
-      const t = (totalElapsed % duration) / duration; // 0.0 to 1.0
+      const TOTAL_CYCLE = SHAPE_DURATION * shapes.length;
+      let startTime = null, lastShapeIndex = -1;
 
-      shapes.forEach((s, i) => {
-        if (i === idx) {
-          s.mesh.visible = true;
-          const m = s.mesh;
-          m.rotation.y += 0.02;
+      function easeInOut(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
 
-          // Universal "from center" starting point (Z = 0 is the marker belly)
-          // Z moves from -2 (slightly behind) to +12 (past the phone)
-          let zPos = -2 + (t * 14);
-          let xPos = 0;
-          let scaleVal = 0.01 + (t * 2.5); // Starts at near-zero, grows to 2.5
+      function calculatePosition(t, traj) {
+        const eased = easeInOut(t);
 
-          if (s.id === 'sphere') {
-            // Sphere stays center, grows to fill view
-            scaleVal = 0.01 + (t * 5); 
-          } else if (s.id === 'cube') {
-            xPos = t * 5; // Diverge Right
-          } else if (s.id === 'donut') {
-            xPos = t * -5; // Diverge Left
-          } else if (s.id === 'knot') {
-            // Knot pulses in center
-            zPos = -2 + (t * 8);
-            scaleVal = 0.5 + (Math.sin(t * Math.PI) * 1);
-          }
-
-          m.position.set(xPos, 0, zPos);
-          m.scale.setScalar(scaleVal);
-
-          // Opacity fade to prevent "popping"
-          if (t < 0.1) m.material.opacity = t * 10;
-          else if (t > 0.9) m.material.opacity = (1 - t) * 10;
-          else m.material.opacity = 1;
-
+        // Y: emanate from marker surface, rise toward camera, then push through
+        let y;
+        if (t < 0.7) {
+          y = FAR_Y + (NEAR_Y - FAR_Y) * eased;
         } else {
-          s.mesh.visible = false;
+          const exitP = (t - 0.7) / 0.3;
+          y = NEAR_Y + exitP * 3.0;
         }
-      });
+
+        // X: drift then veer off
+        let x;
+        if (t < 0.4) {
+          x = (t / 0.4) * 0.3 * traj.xCurve;
+        } else if (t < 0.7) {
+          x = 0.3 * traj.xCurve;
+        } else {
+          const exitP = (t - 0.7) / 0.3;
+          x = 0.3 * traj.xCurve + (exitP * exitP * 2) * traj.xCurve;
+        }
+
+        // Z (lateral on marker plane): subtle drift
+        let z;
+        if (t < 0.7) {
+          z = (t / 0.7) * 0.2 * traj.zCurve;
+        } else {
+          const exitP = (t - 0.7) / 0.3;
+          z = 0.2 * traj.zCurve + exitP * traj.zCurve;
+        }
+
+        return { x, y, z };
+      }
+
+      function animate(timestamp) {
+        requestAnimationFrame(animate);
+        if (!startTime) startTime = timestamp;
+        const elapsed = (timestamp - startTime) % TOTAL_CYCLE;
+        const shapeIndex = Math.floor(elapsed / SHAPE_DURATION);
+        const t = (elapsed % SHAPE_DURATION) / SHAPE_DURATION;
+
+        if (shapeIndex !== lastShapeIndex) {
+          lastShapeIndex = shapeIndex;
+          startShapeSound(shapeIndex);
+        }
+
+        shapes.forEach((s, i) => { s.visible = i === shapeIndex; });
+        const current = shapes[shapeIndex];
+        const traj = trajectories[shapeIndex];
+        const pos = calculatePosition(t, traj);
+        current.position.set(pos.x, pos.y, pos.z);
+
+        const eased = easeInOut(t);
+        current.scale.setScalar(0.01 + 1.2 * eased);
+
+        const r = rotSpeeds[shapeIndex];
+        current.rotation.x += r.x; current.rotation.y += r.y; current.rotation.z += r.z;
+
+        // Opacity fade
+        const mat = current.material;
+        if (t < 0.08)       mat.opacity = t / 0.08;
+        else if (t > 0.92)  mat.opacity = (1 - t) / 0.08;
+        else                mat.opacity = 1;
+
+        setShapeSoundVolume(t);
+      }
+
+      requestAnimationFrame(animate);
     }
   </script>
 </body>
