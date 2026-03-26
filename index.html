@@ -3,17 +3,31 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
-  <title>Space Time - The Sequence</title>
+  <title>Space Time - Sequence v3</title>
   <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
   <style>
-    body { margin: 0; overflow: hidden; background: #000; font-family: monospace; }
-    #overlay { position: fixed; inset: 0; background: #000; z-index: 999; display: flex; align-items: center; justify-content: center; }
-    #start-btn { padding: 20px; background: none; border: 1px solid #fff; color: #fff; cursor: pointer; letter-spacing: 2px; }
+    body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+    #overlay { 
+      position: fixed; inset: 0; background: #000; z-index: 9999; 
+      display: flex; flex-direction: column; align-items: center; justify-content: center; 
+    }
+    #start-btn { 
+      padding: 20px 40px; background: #fff; border: none; color: #000; 
+      font-weight: bold; text-transform: uppercase; cursor: pointer; letter-spacing: 2px;
+    }
+    #instructions {
+      position: fixed; top: 20px; width: 100%; text-align: center;
+      color: #fff; z-index: 1000; text-transform: uppercase; 
+      font-size: 12px; letter-spacing: 2px; pointer-events: none; display: none;
+    }
   </style>
 </head>
 <body>
-  <div id="overlay"><button id="start-btn">BEGIN SEQUENCE</button></div>
+  <div id="overlay">
+    <button id="start-btn">activate camera</button>
+  </div>
+  <div id="instructions">point and keep the camera focus on the horse</div>
 
   <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false; patternRatio: 0.5;" vr-mode-ui="enabled: false">
     <a-marker id="main-marker" type="pattern" url="heromarketer2.patt">
@@ -26,17 +40,32 @@
     let audioCtx, startTime;
     const startBtn = document.getElementById('start-btn');
 
+    function initAudio() {
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const droneGain = audioCtx.createGain();
+        droneGain.gain.value = 0.15;
+        [[55,'sine'],[110,'triangle'],[41.2,'sine']].forEach(([f, t]) => {
+          const o = audioCtx.createOscillator(); o.type = t; o.frequency.value = f;
+          o.connect(droneGain); o.start();
+        });
+        droneGain.connect(audioCtx.destination);
+      } catch(e) { console.error("Audio failed", e); }
+    }
+
     function makeTexture(bg, fg, lines) {
       const c = document.createElement('canvas'); c.width = 512; c.height = 512;
       const ctx = c.getContext('2d');
       ctx.fillStyle = bg; ctx.fillRect(0,0,512,512);
-      ctx.fillStyle = fg; ctx.font = "bold 60px Arial"; ctx.textAlign = "center";
-      lines.forEach((txt, i) => ctx.fillText(txt, 256, 150 + i*100));
+      ctx.fillStyle = fg; ctx.font = "bold 50px Arial"; ctx.textAlign = "center";
+      lines.forEach((txt, i) => ctx.fillText(txt, 256, 200 + i*80));
       return new THREE.CanvasTexture(c);
     }
 
     startBtn.addEventListener('click', () => {
+      initAudio();
       document.getElementById('overlay').style.display = 'none';
+      document.getElementById('instructions').style.display = 'block';
       setupScene();
     });
 
@@ -45,60 +74,71 @@
       const group = document.getElementById('ar-objects').object3D;
       
       const list = [
-        { geom: new THREE.SphereGeometry(0.7, 32, 32), bg: '#fff', fg: '#000', txt: ['SPACE','TIME'], id: 'sphere' },
-        { geom: new THREE.BoxGeometry(0.8, 0.8, 0.8), bg: '#ff00ff', fg: '#fff', txt: ['WAIT','GO'], id: 'cube' },
-        { geom: new THREE.TorusGeometry(0.6, 0.2, 16, 100), bg: '#00ffff', fg: '#000', txt: ['KNOW','DON\'T KNOW'], id: 'donut' },
-        { geom: new THREE.TorusKnotGeometry(0.5, 0.15, 100, 16), bg: '#6a0dad', fg: '#fff', txt: ['?','?','?'], id: 'knot' }
+        { geom: new THREE.SphereGeometry(0.5, 32, 32), bg: '#fff', fg: '#000', txt: ['SPACE','TIME'], id: 'sphere' },
+        { geom: new THREE.BoxGeometry(0.6, 0.6, 0.6), bg: '#ff00ff', fg: '#fff', txt: ['WAIT','GO'], id: 'cube' },
+        { geom: new THREE.TorusGeometry(0.5, 0.15, 16, 100), bg: '#00ffff', fg: '#000', txt: ['KNOW','DON\'T KNOW'], id: 'donut' },
+        { geom: new THREE.TorusKnotGeometry(0.4, 0.1, 100, 16), bg: '#6a0dad', fg: '#fff', txt: ['?','?','?'], id: 'knot' }
       ];
 
       shapes = list.map(conf => {
-        const mat = new THREE.MeshStandardMaterial({ map: makeTexture(conf.bg, conf.fg, conf.txt), transparent: true });
+        const mat = new THREE.MeshStandardMaterial({ 
+          map: makeTexture(conf.bg, conf.fg, conf.txt), 
+          transparent: true,
+          side: THREE.DoubleSide
+        });
         const mesh = new THREE.Mesh(conf.geom, mat);
         mesh.visible = false;
         group.add(mesh);
         return { mesh, id: conf.id };
       });
 
-      group.add(new THREE.AmbientLight(0xffffff, 2));
+      group.add(new THREE.AmbientLight(0xffffff, 2.5));
       animate();
     }
 
     function animate() {
       requestAnimationFrame(animate);
       if (!startTime) startTime = performance.now();
-      const duration = 8000; // 8 seconds per shape
+      const duration = 7000; // 7 seconds per object
       const totalElapsed = (performance.now() - startTime) % (duration * shapes.length);
       const idx = Math.floor(totalElapsed / duration);
-      const t = (totalElapsed % duration) / duration;
+      const t = (totalElapsed % duration) / duration; // 0.0 to 1.0
 
       shapes.forEach((s, i) => {
-        s.mesh.visible = (i === idx);
-        if(s.mesh.visible) {
+        if (i === idx) {
+          s.mesh.visible = true;
           const m = s.mesh;
-          m.rotation.y += 0.01;
+          m.rotation.y += 0.02;
 
-          // LOGIC PER SHAPE
-          if(s.id === 'sphere') {
-            // Sphere comes slowly to center, grows to fill screen
-            m.position.set(0, 0.5, -10 + (t * 8));
-            m.scale.setScalar(0.2 + (t * 4)); 
-            m.material.opacity = t < 0.8 ? 1 : (1 - t) * 5;
-          } 
-          else if(s.id === 'cube') {
-            // Surpass User to the RIGHT
-            m.position.set(t * 6, 0.5, -8 + (t * 18));
-            m.scale.setScalar(0.5 + t);
+          // Universal "from center" starting point (Z = 0 is the marker belly)
+          // Z moves from -2 (slightly behind) to +12 (past the phone)
+          let zPos = -2 + (t * 14);
+          let xPos = 0;
+          let scaleVal = 0.01 + (t * 2.5); // Starts at near-zero, grows to 2.5
+
+          if (s.id === 'sphere') {
+            // Sphere stays center, grows to fill view
+            scaleVal = 0.01 + (t * 5); 
+          } else if (s.id === 'cube') {
+            xPos = t * 5; // Diverge Right
+          } else if (s.id === 'donut') {
+            xPos = t * -5; // Diverge Left
+          } else if (s.id === 'knot') {
+            // Knot pulses in center
+            zPos = -2 + (t * 8);
+            scaleVal = 0.5 + (Math.sin(t * Math.PI) * 1);
           }
-          else if(s.id === 'donut') {
-            // Surpass User to the LEFT
-            m.position.set(t * -6, 0.5, -8 + (t * 18));
-            m.scale.setScalar(0.5 + t);
-          }
-          else if(s.id === 'knot') {
-            // Purple knot hovering/pulsing in center
-            m.position.set(0, 1, -5);
-            m.scale.setScalar(1 + Math.sin(t * Math.PI) * 0.5);
-          }
+
+          m.position.set(xPos, 0, zPos);
+          m.scale.setScalar(scaleVal);
+
+          // Opacity fade to prevent "popping"
+          if (t < 0.1) m.material.opacity = t * 10;
+          else if (t > 0.9) m.material.opacity = (1 - t) * 10;
+          else m.material.opacity = 1;
+
+        } else {
+          s.mesh.visible = false;
         }
       });
     }
