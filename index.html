@@ -3,26 +3,27 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
-  <title>Space Time AR - Horse Final</title>
+  <title>Space Time AR - Calibrated</title>
   <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
   <style>
-    body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+    body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; }
     #overlay {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       background: #000; z-index: 9999; display: flex;
       flex-direction: column; align-items: center; justify-content: center;
     }
     #start-btn {
-      padding: 20px 40px; font-size: 18px; letter-spacing: 2px;
-      text-transform: uppercase; background: #fff; border: none; cursor: pointer;
+      padding: 15px 30px; font-size: 14px; letter-spacing: 4px;
+      text-transform: uppercase; background: none; border: 1px solid #fff; color: #fff; cursor: pointer;
     }
+    #start-btn:active { background: #fff; color: #000; }
   </style>
 </head>
 
 <body>
   <div id="overlay">
-    <button id="start-btn">Enter Space Time</button>
+    <button id="start-btn">Initiate Sequence</button>
   </div>
 
   <a-scene 
@@ -44,8 +45,8 @@
     function initAudio() {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const droneGain = audioCtx.createGain();
-      droneGain.gain.value = 0.15;
-      [[55,'sine'],[55.5,'sine'],[82.4,'triangle']].forEach(([f, t]) => {
+      droneGain.gain.value = 0.12;
+      [[55,'sine'],[110,'triangle'],[41.2,'sine']].forEach(([f, t]) => {
         const o = audioCtx.createOscillator(); o.type = t; o.frequency.value = f;
         o.connect(droneGain); o.start();
       });
@@ -56,8 +57,8 @@
       const c = document.createElement('canvas'); c.width = 512; c.height = 512;
       const ctx = c.getContext('2d');
       ctx.fillStyle = bg; ctx.fillRect(0,0,512,512);
-      ctx.fillStyle = fg; ctx.font = "bold 80px Arial"; ctx.textAlign = "center";
-      text.forEach((t, i) => ctx.fillText(t, 256, 200 + i*100));
+      ctx.fillStyle = fg; ctx.font = "bold 70px Arial"; ctx.textAlign = "center";
+      text.forEach((t, i) => ctx.fillText(t, 256, 220 + i*90));
       return new THREE.CanvasTexture(c);
     }
 
@@ -72,30 +73,61 @@
     function setupShapes() {
       const group = document.getElementById('ar-objects').object3D;
       
-      shapes = [
-        new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), new THREE.MeshStandardMaterial({map: makeTexture('#fff','#000',['SPACE','TIME'])})),
-        new THREE.Mesh(new THREE.BoxGeometry(1.2,1.2,1.2), new THREE.MeshStandardMaterial({map: makeTexture('#ff00ff','#000',['IDEA'])})),
-        new THREE.Mesh(new THREE.TorusGeometry(1, 0.3, 16, 100), new THREE.MeshStandardMaterial({map: makeTexture('#00ffff','#000',['GO'])}))
+      // We use MeshStandardMaterial but we will animate the opacity for the 'Fade'
+      const configs = [
+        { geom: new THREE.SphereGeometry(0.6, 32, 32), bg: '#fff', fg: '#000', txt: ['SPACE','TIME'] },
+        { geom: new THREE.BoxGeometry(0.8, 0.8, 0.8), bg: '#ff00ff', fg: '#fff', txt: ['IDEA'] },
+        { geom: new THREE.TorusGeometry(0.7, 0.2, 16, 100), bg: '#00ffff', fg: '#000', txt: ['GO'] }
       ];
 
-      shapes.forEach(s => { s.visible = false; group.add(s); });
-      group.add(new THREE.AmbientLight(0xffffff, 1.5));
+      shapes = configs.map(conf => {
+        const mat = new THREE.MeshStandardMaterial({
+          map: makeTexture(conf.bg, conf.fg, conf.txt),
+          transparent: true,
+          opacity: 0
+        });
+        const mesh = new THREE.Mesh(conf.geom, mat);
+        mesh.visible = false;
+        group.add(mesh);
+        return mesh;
+      });
+
+      group.add(new THREE.AmbientLight(0xffffff, 2.0));
       animate();
     }
 
     function animate() {
       requestAnimationFrame(animate);
-      const elapsed = (performance.now() - (startTime || (startTime = performance.now()))) % 30000;
-      const idx = Math.floor(elapsed / 10000);
-      const t = (elapsed % 10000) / 10000;
+      const now = performance.now();
+      if (!startTime) startTime = now;
+      
+      const cycleTime = 12000; // 12 seconds per shape cycle
+      const elapsed = (now - startTime) % (cycleTime * shapes.length);
+      const idx = Math.floor(elapsed / cycleTime);
+      const t = (elapsed % cycleTime) / cycleTime; // 0.0 to 1.0
 
       shapes.forEach((s, i) => {
-        s.visible = (i === idx);
-        if(s.visible) {
-          s.position.y = 0.5;
-          s.position.z = -10 + (t * 15); // Objects fly toward you
-          s.rotation.y += 0.02;
-          s.scale.setScalar(0.5 + t * 2);
+        if (i === idx) {
+          s.visible = true;
+          
+          // 1. POSITION: Starts deep (-15) and flies past the viewer (+10)
+          s.position.z = -15 + (t * 25);
+          s.position.y = 0.5; // Hovering just above the horse
+
+          // 2. SCALE: Starts tiny, stays manageable (max 1.2)
+          const scaleVal = 0.05 + (t * 1.15);
+          s.scale.setScalar(scaleVal);
+
+          // 3. FADE: Smoothly fades in at start, fades out as it passes the head
+          if (t < 0.2) s.material.opacity = t * 5; 
+          else if (t > 0.8) s.material.opacity = (1 - t) * 5;
+          else s.material.opacity = 1;
+
+          // 4. ROTATION: Space-drift feel
+          s.rotation.y += 0.015;
+          s.rotation.x += 0.005;
+        } else {
+          s.visible = false;
         }
       });
     }
