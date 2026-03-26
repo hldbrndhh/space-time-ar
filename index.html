@@ -1,72 +1,104 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>AR Debug Mode</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>Space Time AR - Horse Final</title>
   <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
   <style>
-    #debug-log {
-      position: fixed; top: 10px; left: 10px; right: 10px;
-      background: rgba(0,0,0,0.8); color: #0f0;
-      padding: 10px; font-family: monospace; font-size: 10px;
-      z-index: 10000; pointer-events: none;
+    body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+    #overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: #000; z-index: 9999; display: flex;
+      flex-direction: column; align-items: center; justify-content: center;
     }
     #start-btn {
-      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      padding: 20px; z-index: 10001;
+      padding: 20px 40px; font-size: 18px; letter-spacing: 2px;
+      text-transform: uppercase; background: #fff; border: none; cursor: pointer;
     }
   </style>
 </head>
-<body style="margin: 0; overflow: hidden;">
-  <div id="debug-log">Status: Waiting for user...</div>
-  <button id="start-btn">START AR</button>
+
+<body>
+  <div id="overlay">
+    <button id="start-btn">Enter Space Time</button>
+  </div>
 
   <a-scene 
     embedded 
-    arjs="sourceType: webcam; debugUIEnabled: true; patternRatio: 0.5; detectionMode: mono_and_matrix;"
+    arjs="sourceType: webcam; debugUIEnabled: false; patternRatio: 0.5; detectionMode: mono_and_matrix;"
     vr-mode-ui="enabled: false">
     
-    <a-marker id="horse-marker" type="pattern" url="heromarketer2.patt">
-      <a-box position="0 0.5 0" material="color: yellow; opacity: 0.5"></a-box>
-      <a-text value="MARKER FOUND" align="center" rotation="-90 0 0" color="red"></a-text>
+    <a-marker id="main-marker" type="pattern" url="heromarketer2.patt">
+      <a-entity id="ar-objects"></a-entity>
     </a-marker>
 
     <a-entity camera></a-entity>
   </a-scene>
 
   <script>
-    const log = document.getElementById('debug-log');
-    const btn = document.getElementById('start-btn');
-    
-    btn.addEventListener('click', () => {
-      btn.style.display = 'none';
-      log.innerText = "Status: Initializing Camera...";
-      
-      // Monitor the marker
-      const marker = document.getElementById('horse-marker');
-      
-      marker.addEventListener('markerFound', () => {
-        log.innerText = "Status: !!! HORSE FOUND !!!";
-        log.style.color = "#fff";
-        log.style.background = "green";
-      });
+    let audioCtx, masterOutput;
+    const startBtn = document.getElementById('start-btn');
 
-      marker.addEventListener('markerLost', () => {
-        log.innerText = "Status: Marker Lost (Looking for Horse...)";
-        log.style.color = "#0f0";
-        log.style.background = "rgba(0,0,0,0.8)";
+    function initAudio() {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const droneGain = audioCtx.createGain();
+      droneGain.gain.value = 0.15;
+      [[55,'sine'],[55.5,'sine'],[82.4,'triangle']].forEach(([f, t]) => {
+        const o = audioCtx.createOscillator(); o.type = t; o.frequency.value = f;
+        o.connect(droneGain); o.start();
       });
+      droneGain.connect(audioCtx.destination);
+    }
+
+    function makeTexture(bg, fg, text) {
+      const c = document.createElement('canvas'); c.width = 512; c.height = 512;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = bg; ctx.fillRect(0,0,512,512);
+      ctx.fillStyle = fg; ctx.font = "bold 80px Arial"; ctx.textAlign = "center";
+      text.forEach((t, i) => ctx.fillText(t, 256, 200 + i*100));
+      return new THREE.CanvasTexture(c);
+    }
+
+    startBtn.addEventListener('click', () => {
+      initAudio();
+      document.getElementById('overlay').style.display = 'none';
+      setupShapes();
     });
 
-    // Check if the .patt file is actually accessible
-    fetch('heromarketer2.patt')
-      .then(r => {
-        if(r.ok) log.innerText += "\nFile: heromarketer2.patt LOADED";
-        else log.innerText += "\nFile: heromarketer2.patt ERROR 404";
-      })
-      .catch(e => log.innerText += "\nFile: Network Error");
+    let shapes = [], startTime;
+
+    function setupShapes() {
+      const group = document.getElementById('ar-objects').object3D;
+      
+      shapes = [
+        new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), new THREE.MeshStandardMaterial({map: makeTexture('#fff','#000',['SPACE','TIME'])})),
+        new THREE.Mesh(new THREE.BoxGeometry(1.2,1.2,1.2), new THREE.MeshStandardMaterial({map: makeTexture('#ff00ff','#000',['IDEA'])})),
+        new THREE.Mesh(new THREE.TorusGeometry(1, 0.3, 16, 100), new THREE.MeshStandardMaterial({map: makeTexture('#00ffff','#000',['GO'])}))
+      ];
+
+      shapes.forEach(s => { s.visible = false; group.add(s); });
+      group.add(new THREE.AmbientLight(0xffffff, 1.5));
+      animate();
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const elapsed = (performance.now() - (startTime || (startTime = performance.now()))) % 30000;
+      const idx = Math.floor(elapsed / 10000);
+      const t = (elapsed % 10000) / 10000;
+
+      shapes.forEach((s, i) => {
+        s.visible = (i === idx);
+        if(s.visible) {
+          s.position.y = 0.5;
+          s.position.z = -10 + (t * 15); // Objects fly toward you
+          s.rotation.y += 0.02;
+          s.scale.setScalar(0.5 + t * 2);
+        }
+      });
+    }
   </script>
 </body>
 </html>
