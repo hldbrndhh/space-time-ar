@@ -33,15 +33,13 @@
 </head>
 <body>
   <div id="overlay">
-    <p>Point the phone<br/>at the marker<br/>and activate the camera</p>
+    <p>Point the phone<br/>at the horse<br/>in the picture</p>
     <button id="start-btn">activate camera</button>
   </div>
-  <div id="instructions">point camera at the marker</div>
+  <div id="instructions">point camera at the horse in the picture</div>
 
   <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false; patternRatio: 0.5;" vr-mode-ui="enabled: false">
-    <a-marker id="main-marker" type="pattern" url="heromarketer2.patt">
-      <a-entity id="ar-objects"></a-entity>
-    </a-marker>
+    <a-marker id="main-marker" type="pattern" url="heromarketer2.patt"></a-marker>
     <a-entity camera></a-entity>
   </a-scene>
 
@@ -185,123 +183,168 @@
       if (animRunning) return;
       animRunning = true;
 
-      const group = document.getElementById('ar-objects').object3D;
-      group.add(new THREE.AmbientLight(0xffffff, 1.2));
-      const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(3, 5, 3); group.add(dir);
+      // ── Wait for A-Frame scene to be ready, then steal its renderer/camera ──
+      const aScene = document.querySelector('a-scene');
 
-      // Scale factor: AR.js marker units are roughly 1 unit = marker width.
-      // Objects travel "up" out of the marker in the marker's local Y-axis.
-      // We use the marker's local coordinate space: Y is up from marker surface.
-      // FAR_Y = starting point well behind marker plane, NEAR_Y = close to camera.
-      const FAR_Y = -0.1;   // just at/below the marker surface
-      const NEAR_Y = 4.0;   // well above marker (toward camera)
-      const SHAPE_DURATION = 14000;
+      function onSceneReady() {
+        const renderer = aScene.renderer;
+        const camera   = aScene.camera;
+        const scene    = aScene.object3D;
 
-      const sphere    = new THREE.Mesh(new THREE.SphereGeometry(0.4, 64, 64),            mat(makeSpaceTimeTexture()));
-      const cube      = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6),             mat(makeIdeaTexture()));
-      const pyramid   = makePyramidMesh(makePlusMinusTexture());
-      const torus     = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.15, 32, 100),      mat(makeWaitGoTexture()));
-      const icosa     = new THREE.Mesh(new THREE.IcosahedronGeometry(0.44, 1),           mat(makeSmileTexture()));
-      const torusKnot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.36, 0.12, 120, 16),mat(makeKnowTexture()));
+        scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+        const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+        dir.position.set(3, 5, 3); scene.add(dir);
 
-      const shapes = [sphere, cube, pyramid, torus, icosa, torusKnot];
+        // ── Shapes ──
+        const sphere    = new THREE.Mesh(new THREE.SphereGeometry(0.4, 64, 64),             mat(makeSpaceTimeTexture()));
+        const cube      = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6),              mat(makeIdeaTexture()));
+        const pyramid   = makePyramidMesh(makePlusMinusTexture());
+        const torus     = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.15, 32, 100),       mat(makeWaitGoTexture()));
+        const icosa     = new THREE.Mesh(new THREE.IcosahedronGeometry(0.44, 1),            mat(makeSmileTexture()));
+        const torusKnot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.36, 0.12, 120, 16), mat(makeKnowTexture()));
+        const shapes = [sphere, cube, pyramid, torus, icosa, torusKnot];
 
-      const rotSpeeds = [
-        { x:0.005, y:0.008, z:0.003 },
-        { x:0.009, y:0.006, z:0.004 },
-        { x:0.002, y:0.007, z:0.001 },
-        { x:0.006, y:0.010, z:0.002 },
-        { x:0.007, y:0.005, z:0.006 },
-        { x:0.004, y:0.009, z:0.005 },
-      ];
+        // ── Pivot group: objects live here, positioned in world space ──
+        const pivot = new THREE.Group();
+        scene.add(pivot);
+        shapes.forEach(s => { s.visible = false; pivot.add(s); });
 
-      // Trajectories adapted to marker local space.
-      // xCurve / zCurve = lateral drift on marker plane; yDrift = vertical bias.
-      const trajectories = [
-        { xCurve: -1.8, zCurve:  0.5, yDrift:  0.3 },  // sphere
-        { xCurve:  1.6, zCurve: -0.4, yDrift: -0.2 },  // cube
-        { xCurve: -1.4, zCurve: -0.6, yDrift: -0.3 },  // pyramid
-        { xCurve:  2.0, zCurve:  0.3, yDrift:  0.2 },  // torus
-        { xCurve: -2.2, zCurve:  0.1, yDrift:  0.1 },  // icosahedron
-        { xCurve:  1.2, zCurve: -0.2, yDrift: -0.1 },  // torus knot
-      ];
+        const rotSpeeds = [
+          { x:0.005, y:0.008, z:0.003 },
+          { x:0.009, y:0.006, z:0.004 },
+          { x:0.002, y:0.007, z:0.001 },
+          { x:0.006, y:0.010, z:0.002 },
+          { x:0.007, y:0.005, z:0.006 },
+          { x:0.004, y:0.009, z:0.005 },
+        ];
 
-      shapes.forEach(s => { s.visible = false; group.add(s); });
+        // Exit directions in marker-local XZ (flat plane), normalised
+        const trajectories = [
+          { xCurve: -1.0, zCurve:  0.3 },
+          { xCurve:  1.0, zCurve: -0.3 },
+          { xCurve: -0.8, zCurve: -0.4 },
+          { xCurve:  1.0, zCurve:  0.2 },
+          { xCurve: -1.0, zCurve:  0.1 },
+          { xCurve:  0.7, zCurve: -0.2 },
+        ];
 
-      const TOTAL_CYCLE = SHAPE_DURATION * shapes.length;
-      let startTime = null, lastShapeIndex = -1;
+        // ── Smoothed anchor: exponential low-pass on marker world position ──
+        const smoothPos = new THREE.Vector3();
+        const smoothQuat = new THREE.Quaternion();
+        let anchorReady = false;
+        const SMOOTH = 0.08; // lower = smoother but more lag (0.05–0.12 is good)
 
-      function easeInOut(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
+        const markerEl = document.getElementById('main-marker');
 
-      function calculatePosition(t, traj) {
-        const eased = easeInOut(t);
+        function updateAnchor() {
+          if (!markerEl || !markerEl.object3D) return;
+          const mObj = markerEl.object3D;
+          if (!mObj.visible) return; // marker not detected this frame
 
-        // Y: emanate from marker surface, rise toward camera, then push through
-        let y;
-        if (t < 0.7) {
-          y = FAR_Y + (NEAR_Y - FAR_Y) * eased;
-        } else {
-          const exitP = (t - 0.7) / 0.3;
-          y = NEAR_Y + exitP * 3.0;
+          // Get marker world position & quaternion
+          const wp = new THREE.Vector3();
+          const wq = new THREE.Quaternion();
+          mObj.getWorldPosition(wp);
+          mObj.getWorldQuaternion(wq);
+
+          if (!anchorReady) {
+            smoothPos.copy(wp);
+            smoothQuat.copy(wq);
+            anchorReady = true;
+          } else {
+            smoothPos.lerp(wp, SMOOTH);
+            smoothQuat.slerp(wq, SMOOTH);
+          }
+
+          // Apply smoothed transform to pivot
+          pivot.position.copy(smoothPos);
+          pivot.quaternion.copy(smoothQuat);
         }
 
-        // X: drift then veer off
-        let x;
-        if (t < 0.4) {
-          x = (t / 0.4) * 0.3 * traj.xCurve;
-        } else if (t < 0.7) {
-          x = 0.3 * traj.xCurve;
-        } else {
-          const exitP = (t - 0.7) / 0.3;
-          x = 0.3 * traj.xCurve + (exitP * exitP * 2) * traj.xCurve;
+        // ── Motion ──
+        const SHAPE_DURATION = 14000;
+        const TOTAL_CYCLE = SHAPE_DURATION * shapes.length;
+        let startTime = null, lastShapeIndex = -1;
+
+        function easeInOut(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
+
+        // All positions are in pivot-local space (i.e. marker-relative).
+        // Y+ is up from marker surface toward camera.
+        // Keep lateral drift modest so objects stay in frame.
+        const FAR_Y = 0.0, NEAR_Y = 2.5;
+
+        function calcPos(t, traj) {
+          const e = easeInOut(t);
+
+          // Y: rise from marker, slow to a hover, then push through
+          let y;
+          if (t < 0.75) {
+            y = FAR_Y + (NEAR_Y - FAR_Y) * e;
+          } else {
+            const ep = (t - 0.75) / 0.25;
+            y = NEAR_Y + ep * ep * 2.5;
+          }
+
+          // Lateral (X/Z in marker plane): hold center until 0.65, then veer
+          let xz;
+          if (t < 0.65) {
+            xz = 0; // pure straight rise
+          } else {
+            const ep = (t - 0.65) / 0.35;
+            xz = ep * ep; // accelerating exit
+          }
+
+          return {
+            x: xz * traj.xCurve * 1.5,
+            y,
+            z: xz * traj.zCurve * 1.5
+          };
         }
 
-        // Z (lateral on marker plane): subtle drift
-        let z;
-        if (t < 0.7) {
-          z = (t / 0.7) * 0.2 * traj.zCurve;
-        } else {
-          const exitP = (t - 0.7) / 0.3;
-          z = 0.2 * traj.zCurve + exitP * traj.zCurve;
+        function animate(timestamp) {
+          requestAnimationFrame(animate);
+          updateAnchor();
+
+          if (!startTime) startTime = timestamp;
+          const elapsed = (timestamp - startTime) % TOTAL_CYCLE;
+          const shapeIndex = Math.floor(elapsed / SHAPE_DURATION);
+          const t = (elapsed % SHAPE_DURATION) / SHAPE_DURATION;
+
+          if (shapeIndex !== lastShapeIndex) {
+            lastShapeIndex = shapeIndex;
+            startShapeSound(shapeIndex);
+          }
+
+          shapes.forEach((s, i) => { s.visible = (i === shapeIndex) && anchorReady; });
+          const current = shapes[shapeIndex];
+          const traj = trajectories[shapeIndex];
+          const pos = calcPos(t, traj);
+          current.position.set(pos.x, pos.y, pos.z);
+
+          current.scale.setScalar(0.01 + 1.2 * easeInOut(t));
+
+          const r = rotSpeeds[shapeIndex];
+          current.rotation.x += r.x;
+          current.rotation.y += r.y;
+          current.rotation.z += r.z;
+
+          // Opacity fade in/out
+          const m = current.material;
+          if (t < 0.08)      m.opacity = t / 0.08;
+          else if (t > 0.92) m.opacity = (1 - t) / 0.08;
+          else               m.opacity = 1;
+
+          setShapeSoundVolume(t);
         }
 
-        return { x, y, z };
-      }
-
-      function animate(timestamp) {
         requestAnimationFrame(animate);
-        if (!startTime) startTime = timestamp;
-        const elapsed = (timestamp - startTime) % TOTAL_CYCLE;
-        const shapeIndex = Math.floor(elapsed / SHAPE_DURATION);
-        const t = (elapsed % SHAPE_DURATION) / SHAPE_DURATION;
-
-        if (shapeIndex !== lastShapeIndex) {
-          lastShapeIndex = shapeIndex;
-          startShapeSound(shapeIndex);
-        }
-
-        shapes.forEach((s, i) => { s.visible = i === shapeIndex; });
-        const current = shapes[shapeIndex];
-        const traj = trajectories[shapeIndex];
-        const pos = calculatePosition(t, traj);
-        current.position.set(pos.x, pos.y, pos.z);
-
-        const eased = easeInOut(t);
-        current.scale.setScalar(0.01 + 1.2 * eased);
-
-        const r = rotSpeeds[shapeIndex];
-        current.rotation.x += r.x; current.rotation.y += r.y; current.rotation.z += r.z;
-
-        // Opacity fade
-        const mat = current.material;
-        if (t < 0.08)       mat.opacity = t / 0.08;
-        else if (t > 0.92)  mat.opacity = (1 - t) / 0.08;
-        else                mat.opacity = 1;
-
-        setShapeSoundVolume(t);
       }
 
-      requestAnimationFrame(animate);
+      if (aScene.hasLoaded) {
+        onSceneReady();
+      } else {
+        aScene.addEventListener('loaded', onSceneReady);
+      }
     }
   </script>
 </body>
