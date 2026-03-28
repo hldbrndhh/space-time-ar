@@ -140,6 +140,34 @@
       return new THREE.CanvasTexture(c);
     }
 
+    // Pyramid +/− texture: fewer, larger signs with generous spacing
+    function makePlusMinusTexture() {
+      const sz = 2048, c = document.createElement('canvas');
+      c.width = sz; c.height = sz;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#1a7a1a'; ctx.fillRect(0, 0, sz, sz);
+      ctx.fillStyle = '#000000';
+      const fontSize = 340;
+      const lineH = 420;
+      ctx.font = `900 ${fontSize}px Arial Black, sans-serif`;
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      const signs = ['+', '−'];
+      let seed = 42;
+      function rand() { seed = (seed*1664525+1013904223)&0xffffffff; return (seed>>>0)/0xffffffff; }
+      let y = lineH * 0.5;
+      let row = 0;
+      while (y < sz + lineH) {
+        let x = 0;
+        while (x < sz + 200) {
+          const w = signs[Math.floor(rand()*signs.length)];
+          ctx.fillText(w, x, y);
+          x += ctx.measureText(w).width + 120;
+        }
+        y += lineH; row++;
+      }
+      return new THREE.CanvasTexture(c);
+    }
+
     // Cone texture: many tiled lines of large text so every part of the cone
     // surface is covered. ConeGeometry UV narrows toward the tip so we need
     // enough density that text is always visible regardless of viewing angle.
@@ -219,7 +247,7 @@
 
         // ── Textures & materials ──
         const txSpaceTime = makeLinearTexture('#ffffff','#000000',['SPACE','TIME'],       137,100,120, 8);
-        const txPlusMinus = makeLinearTexture('#1a7a1a','#000000',['+','−'],               42, 90, 95,12);
+        const txPlusMinus = makePlusMinusTexture();
         const txWaitGo    = makeLinearTexture('#ff69b4','#000000',['WAIT','GO'],           77,110,130,28);
         const txKnow      = makeLinearTexture('#ffe600','#000000',['KNOW',"DON'T KNOW"], 291, 62,100,20);
         const txEndsMeet  = makeLinearTexture('#1a3a8a','#ffffff',['ENDS MEET'],          333, 68,100,20);
@@ -238,7 +266,18 @@
           color: 0xcc0000, roughness: 0.6, metalness: 0.1,
           transparent: true, opacity: 0
         });
-        const torusKnot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.38,0.12,120,16), knotMat);
+        const torusKnotGeo = new THREE.TorusKnotGeometry(0.38,0.12,120,16);
+        const torusKnot = new THREE.Mesh(torusKnotGeo, knotMat);
+
+        // Black wireframe lines over the knot to reveal 3D structure
+        const wireMat = new THREE.LineBasicMaterial({
+          color: 0x000000, transparent: true, opacity: 0,
+          linewidth: 1  // note: linewidth >1 only works in WebGL2/some platforms
+        });
+        const wireframe = new THREE.LineSegments(
+          new THREE.WireframeGeometry(torusKnotGeo), wireMat
+        );
+        torusKnot.add(wireframe);
 
         // Pulsing dot ring — 12 white spheres orbiting in a circle around the knot
         const DOT_COUNT  = 12;
@@ -287,9 +326,9 @@
           const apply = m => { if (m) { m.transparent=true; m.opacity=v; } };
           if (Array.isArray(mesh.material)) mesh.material.forEach(apply);
           else apply(mesh.material);
-          // Propagate to dot children
+          // Propagate to dot spheres and wireframe children
           mesh.children.forEach(child => {
-            if (child.isMesh && child.material) {
+            if (child.material) {
               child.material.transparent = true;
               child.material.opacity = v;
             }
@@ -297,6 +336,7 @@
         }
 
         // ── Rise-Hold-Fade factory ──
+        // Duration 12500ms: ~2500ms rise, ~8500ms hold, ~1500ms fade (FADE_START=0.88)
         function makeAct(mesh, sndIdx, durMs, holdY, holdSc, rotX, rotY, rotZ, riseFrac) {
           riseFrac = riseFrac || 0.2;
           return {
@@ -306,7 +346,7 @@
               mesh.rotation.set(0,0,0); setOpacity(mesh, 0);
             },
             tick(t) {
-              const FADE_START = 0.85;
+              const FADE_START = 0.88;
               let pos, sc, op;
               if (t <= riseFrac) {
                 const rt = t / riseFrac, e = easeOut(rt);
@@ -332,27 +372,28 @@
 
         // ── ACTS ──
         const ACTS = [
-          // 1. Sphere — FrontSide + slow tumble on X and Y so text stays legible
-          makeAct(sphere,    0, 10000,  1.8, 1.20,  0.003, 0.007, 0.000, 0.20),
-          // 2. Pyramid — green, +/−
-          makeAct(pyramid,   1, 10000,  1.8, 1.10,  0.005, 0.008, 0.003, 0.20),
+          // 1. Sphere — dual-axis tumble (rotX + rotY)
+          makeAct(sphere,    0, 12500,  1.8, 1.20,  0.004, 0.007, 0.000, 0.20),
+          // 2. Pyramid — green, large +/−
+          makeAct(pyramid,   1, 12500,  1.8, 1.10,  0.005, 0.008, 0.003, 0.20),
           // 3. Cube — pink, WAIT/GO
-          makeAct(cube,      2, 10000,  1.8, 1.10,  0.005, 0.007, 0.004, 0.20),
+          makeAct(cube,      2, 12500,  1.8, 1.10,  0.005, 0.007, 0.004, 0.20),
           // 4. Torus — yellow, KNOW/DON'T KNOW
-          makeAct(torus,     3, 10000,  1.8, 1.15,  0.006, 0.010, 0.002, 0.20),
-          // 5. Cone — further out, rotates on X axis (tip-over tumble, not just spin)
-          makeAct(cone,      4, 10000,  2.4, 1.40,  0.012, 0.000, 0.000, 0.20),
+          makeAct(torus,     3, 12500,  1.8, 1.15,  0.006, 0.010, 0.002, 0.20),
+          // 5. Cone — further out, tip-over tumble on X
+          makeAct(cone,      4, 12500,  2.4, 1.40,  0.012, 0.000, 0.000, 0.20),
           // 6. Cylinder — blue, slow roll
-          makeAct(cylinder,  5, 10000,  1.8, 1.15,  0.000, 0.008, 0.018, 0.20),
-          // 7. Knot — red solid + pulsing white dot ring (custom act)
+          makeAct(cylinder,  5, 12500,  1.8, 1.15,  0.000, 0.008, 0.018, 0.20),
+          // 7. Knot — red solid + black wireframe + pulsing white dot ring
           {
-            duration: 10000, soundIndex: 6, meshes: [torusKnot],
+            duration: 12500, soundIndex: 6, meshes: [torusKnot],
             init() {
               torusKnot.position.set(0,0,0); torusKnot.scale.setScalar(0.01);
               torusKnot.rotation.set(0,0,0); setOpacity(torusKnot, 0);
+              wireMat.opacity = 0;
             },
             tick(t) {
-              const riseFrac = 0.2, FADE_START = 0.85;
+              const riseFrac = 0.2, FADE_START = 0.88;
               const holdY = 1.8, holdSc = 1.25;
               let pos, sc, op;
               if (t <= riseFrac) {
@@ -369,15 +410,15 @@
               torusKnot.rotation.x += 0.007;
               torusKnot.rotation.y += 0.011;
               torusKnot.rotation.z += 0.004;
-              // Set knot body opacity
               knotMat.transparent = true; knotMat.opacity = op;
+              // Wireframe slightly less opaque than body
+              wireMat.transparent = true; wireMat.opacity = op * 0.55;
               // Pulse each dot with a rippling sine wave
-              const now = t * 10; // time in seconds
+              const now = t * 12.5;
               dots.forEach((d, i) => {
                 const phase = (i / DOT_COUNT) * Math.PI * 2;
-                const pulse = 0.5 + 0.5 * Math.sin(now * 3.5 + phase); // 0..1
-                const sc2 = 0.4 + pulse * 1.4; // scale range 0.4x..1.8x
-                d.mesh.scale.setScalar(sc2);
+                const pulse = 0.5 + 0.5 * Math.sin(now * 3.5 + phase);
+                d.mesh.scale.setScalar(0.4 + pulse * 1.4);
                 d.mesh.material.opacity = op * (0.4 + pulse * 0.6);
               });
               if (shapeSound && audioCtx)
