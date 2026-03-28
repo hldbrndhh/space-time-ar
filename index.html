@@ -170,24 +170,6 @@
       return new THREE.CanvasTexture(c);
     }
 
-    // Knot: transparent-background sprite — just the white ? glyph, no filled square.
-    function makeQuestionSpriteMat() {
-      const sz = 512, c = document.createElement('canvas');
-      c.width = sz; c.height = sz;
-      const ctx = c.getContext('2d');
-      // No background fill — stays fully transparent
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '900 420px Arial Black, sans-serif';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      // Thick dark outline so the ? reads against the red knot behind it
-      ctx.strokeStyle = '#cc0000';
-      ctx.lineWidth = 28;
-      ctx.strokeText('?', sz/2, sz/2 + 20);
-      ctx.fillText('?', sz/2, sz/2 + 20);
-      const tex = new THREE.CanvasTexture(c);
-      return new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0, depthTest: false });
-    }
-
     function mkMat(tex) {
       return new THREE.MeshStandardMaterial({
         map: tex, roughness: 0.8, metalness: 0.05,
@@ -242,7 +224,6 @@
         const txKnow      = makeLinearTexture('#ffe600','#000000',['KNOW',"DON'T KNOW"], 291, 62,100,20);
         const txEndsMeet  = makeLinearTexture('#1a3a8a','#ffffff',['ENDS MEET'],          333, 68,100,20);
         const txCone      = makeConeTexture();
-        const spriteMat   = makeQuestionSpriteMat();
 
         // ── Meshes ──
         const sphere    = new THREE.Mesh(new THREE.SphereGeometry(0.5,64,64),           mkMat(txSpaceTime));
@@ -252,18 +233,28 @@
         const cone      = new THREE.Mesh(new THREE.ConeGeometry(0.4,1.0,64),            mkMat(txCone));
         const cylinder  = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.9,32), mkMat(txEndsMeet));
 
-        // Torus knot as the 3D shape (red, no texture — the ? is on a sprite)
-        const knotMat   = new THREE.MeshStandardMaterial({
+        // Torus knot — solid red, no texture
+        const knotMat = new THREE.MeshStandardMaterial({
           color: 0xcc0000, roughness: 0.6, metalness: 0.1,
           transparent: true, opacity: 0
         });
         const torusKnot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.38,0.12,120,16), knotMat);
 
-        // Billboard sprite — single large ? always facing camera, sits in front of knot
-        const sprite = new THREE.Sprite(spriteMat);
-        sprite.scale.set(0.9, 0.9, 1);
-        sprite.position.set(0, 0, 0);
-        torusKnot.add(sprite);   // child of knot so it moves with it
+        // Pulsing dot ring — 12 white spheres orbiting in a circle around the knot
+        const DOT_COUNT  = 12;
+        const RING_R     = 0.72;   // ring radius (slightly larger than knot bounding sphere ~0.5)
+        const dotMat     = new THREE.MeshStandardMaterial({
+          color: 0xffffff, roughness: 0.4, metalness: 0.0,
+          transparent: true, opacity: 0
+        });
+        const dots = [];
+        for (let i = 0; i < DOT_COUNT; i++) {
+          const angle = (i / DOT_COUNT) * Math.PI * 2;
+          const dot = new THREE.Mesh(new THREE.SphereGeometry(0.055, 16, 16), dotMat.clone());
+          dot.position.set(Math.cos(angle) * RING_R, Math.sin(angle) * RING_R, 0);
+          torusKnot.add(dot);
+          dots.push({ mesh: dot, angle });
+        }
 
         const MESHES = [sphere, pyramid, cube, torus, cone, cylinder, torusKnot];
 
@@ -296,9 +287,9 @@
           const apply = m => { if (m) { m.transparent=true; m.opacity=v; } };
           if (Array.isArray(mesh.material)) mesh.material.forEach(apply);
           else apply(mesh.material);
-          // Also update any sprite children
+          // Propagate to dot children
           mesh.children.forEach(child => {
-            if (child.isSprite && child.material) {
+            if (child.isMesh && child.material) {
               child.material.transparent = true;
               child.material.opacity = v;
             }
@@ -353,8 +344,46 @@
           makeAct(cone,      4, 10000,  2.4, 1.40,  0.012, 0.000, 0.000, 0.20),
           // 6. Cylinder — blue, slow roll
           makeAct(cylinder,  5, 10000,  1.8, 1.15,  0.000, 0.008, 0.018, 0.20),
-          // 7. Knot — red solid + billboard ? sprite
-          makeAct(torusKnot, 6, 10000,  1.8, 1.25,  0.007, 0.011, 0.004, 0.20),
+          // 7. Knot — red solid + pulsing white dot ring (custom act)
+          {
+            duration: 10000, soundIndex: 6, meshes: [torusKnot],
+            init() {
+              torusKnot.position.set(0,0,0); torusKnot.scale.setScalar(0.01);
+              torusKnot.rotation.set(0,0,0); setOpacity(torusKnot, 0);
+            },
+            tick(t) {
+              const riseFrac = 0.2, FADE_START = 0.85;
+              const holdY = 1.8, holdSc = 1.25;
+              let pos, sc, op;
+              if (t <= riseFrac) {
+                const rt = t / riseFrac, e = easeOut(rt);
+                pos = holdY * e; sc = 0.01 + (holdSc - 0.01) * e;
+                op = rt < 0.12 ? rt / 0.12 : 1;
+              } else {
+                pos = holdY; sc = holdSc;
+                const ht = (t - riseFrac) / (1 - riseFrac);
+                op = ht > FADE_START ? (1 - ht) / (1 - FADE_START) : 1;
+              }
+              torusKnot.position.set(0, pos, 0);
+              torusKnot.scale.setScalar(sc);
+              torusKnot.rotation.x += 0.007;
+              torusKnot.rotation.y += 0.011;
+              torusKnot.rotation.z += 0.004;
+              // Set knot body opacity
+              knotMat.transparent = true; knotMat.opacity = op;
+              // Pulse each dot with a rippling sine wave
+              const now = t * 10; // time in seconds
+              dots.forEach((d, i) => {
+                const phase = (i / DOT_COUNT) * Math.PI * 2;
+                const pulse = 0.5 + 0.5 * Math.sin(now * 3.5 + phase); // 0..1
+                const sc2 = 0.4 + pulse * 1.4; // scale range 0.4x..1.8x
+                d.mesh.scale.setScalar(sc2);
+                d.mesh.material.opacity = op * (0.4 + pulse * 0.6);
+              });
+              if (shapeSound && audioCtx)
+                shapeSound.gain.gain.setTargetAtTime(clamp(op*0.42,0,0.42), audioCtx.currentTime, 0.08);
+            }
+          },
         ];
 
         // ── Sequence runner ──
