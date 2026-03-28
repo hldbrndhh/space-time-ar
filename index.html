@@ -140,37 +140,49 @@
       return new THREE.CanvasTexture(c);
     }
 
-    // Cone texture: exactly 3 lines of text centred on a square canvas.
-    // Three.js ConeGeometry unwraps the lateral surface as a single triangle fan
-    // from tip (top) to base (bottom). U goes 0→1 around the circumference,
-    // V goes 0 (base) → 1 (tip). We paint 3 horizontal text bands so each band
-    // maps cleanly onto one third of the cone's height.
+    // Cone texture: many tiled lines of large text so every part of the cone
+    // surface is covered. ConeGeometry UV narrows toward the tip so we need
+    // enough density that text is always visible regardless of viewing angle.
     function makeConeTexture() {
-      const sz = 1024, c = document.createElement('canvas');
+      const sz = 2048, c = document.createElement('canvas');
       c.width = sz; c.height = sz;
       const ctx = c.getContext('2d');
       ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, sz, sz);
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      const lines = ['SUGAR', 'SALT', 'SUGAR'];
-      const fontSize = 160;
+      const fontSize = 200;
       ctx.font = `900 ${fontSize}px Arial Black, sans-serif`;
-      lines.forEach((word, i) => {
-        const y = sz * (i + 0.5) / lines.length;
-        ctx.fillText(word, sz / 2, y);
-      });
+      const words = ['SUGAR', 'SALT'];
+      const lineH = fontSize * 1.15;
+      const numLines = Math.ceil(sz / lineH) + 2;
+      for (let i = 0; i < numLines; i++) {
+        const y = (i + 0.5) * lineH;
+        const word = words[i % words.length];
+        // Draw the word repeated across the full width
+        const w = ctx.measureText(word).width;
+        const gap = 60;
+        let x = 0;
+        while (x < sz + w) {
+          ctx.fillText(word, x, y);
+          x += w + gap;
+        }
+      }
       return new THREE.CanvasTexture(c);
     }
 
-    // Knot: one giant ? on a billboard sprite — bypasses UV entirely.
+    // Knot: transparent-background sprite — just the white ? glyph, no filled square.
     function makeQuestionSpriteMat() {
       const sz = 512, c = document.createElement('canvas');
       c.width = sz; c.height = sz;
       const ctx = c.getContext('2d');
-      ctx.fillStyle = '#cc0000'; ctx.fillRect(0, 0, sz, sz);
+      // No background fill — stays fully transparent
       ctx.fillStyle = '#ffffff';
-      ctx.font = '900 380px Arial Black, sans-serif';
+      ctx.font = '900 420px Arial Black, sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      // Thick dark outline so the ? reads against the red knot behind it
+      ctx.strokeStyle = '#cc0000';
+      ctx.lineWidth = 28;
+      ctx.strokeText('?', sz/2, sz/2 + 20);
       ctx.fillText('?', sz/2, sz/2 + 20);
       const tex = new THREE.CanvasTexture(c);
       return new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0, depthTest: false });
