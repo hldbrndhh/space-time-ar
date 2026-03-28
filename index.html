@@ -71,68 +71,67 @@
       lim.connect(audioCtx.destination);
       const droneGain = audioCtx.createGain(); droneGain.gain.value = 0;
       const conv = audioCtx.createConvolver(); conv.buffer = makeReverb(audioCtx, 3.5, 2.0);
-      [[55,'sine'],[55.5,'sine'],[82.4,'triangle']].forEach(([f,t]) => {
-        const o = audioCtx.createOscillator(); o.type = t; o.frequency.value = f;
+      [[55,'sine'],[55.5,'sine'],[82.4,'triangle']].forEach(function(ft) {
+        var o = audioCtx.createOscillator(); o.type = ft[1]; o.frequency.value = ft[0];
         o.connect(droneGain); o.start();
       });
       droneGain.connect(conv); conv.connect(lim); droneGain.connect(lim);
       droneGain.gain.setTargetAtTime(0.18, audioCtx.currentTime, 2.5);
-      const b = audioCtx.createOscillator(), bg = audioCtx.createGain();
+      var b = audioCtx.createOscillator(), bg = audioCtx.createGain();
       bg.gain.value = 0.2; b.connect(bg); bg.connect(lim);
       b.frequency.value = 440; b.start(); b.stop(audioCtx.currentTime + 0.1);
       return lim;
     }
 
-    const SOUND_CFGS = [
-      { freq:220,   type:'sine',     filt:800  },
-      { freq:261.6, type:'triangle', filt:1200 },
-      { freq:174.6, type:'square',   filt:600  },
-      { freq:196.0, type:'sine',     filt:900  },
-      { freq:349.2, type:'triangle', filt:1600 },
-      { freq:130.8, type:'square',   filt:500  },
-      { freq:293.7, type:'triangle', filt:1400 },
+    var SOUND_CFGS = [
+      { freq:220,   type:'sine',     filt:800  }, // 0 sphere
+      { freq:261.6, type:'triangle', filt:1200 }, // 1 pyramid
+      { freq:174.6, type:'square',   filt:600  }, // 2 cube
+      { freq:196.0, type:'sine',     filt:900  }, // 3 torus
+      { freq:349.2, type:'triangle', filt:1600 }, // 4 cone
+      { freq:130.8, type:'square',   filt:500  }, // 5 cylinder
+      // Knot: lower frequency, quieter (handled via lower peak vol in tick)
+      { freq:82.4,  type:'sine',     filt:400  }, // 6 knot — deep low tone
     ];
 
     function startShapeSound(idx) {
       if (!audioCtx) return; stopShapeSound();
-      const c = SOUND_CFGS[idx]; if (!c) return;
-      const gain = audioCtx.createGain(); gain.gain.value = 0;
-      const osc  = audioCtx.createOscillator(); osc.type = c.type; osc.frequency.value = c.freq;
-      const sub  = audioCtx.createOscillator(); sub.type = 'sine'; sub.frequency.value = c.freq/2;
-      const sg   = audioCtx.createGain(); sg.gain.value = 0.4; sub.connect(sg);
-      const flt  = audioCtx.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = c.filt; flt.Q.value = 2;
+      var c = SOUND_CFGS[idx]; if (!c) return;
+      var gain = audioCtx.createGain(); gain.gain.value = 0;
+      var osc  = audioCtx.createOscillator(); osc.type = c.type; osc.frequency.value = c.freq;
+      var sub  = audioCtx.createOscillator(); sub.type = 'sine'; sub.frequency.value = c.freq/2;
+      var sg   = audioCtx.createGain(); sg.gain.value = 0.4; sub.connect(sg);
+      var flt  = audioCtx.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = c.filt; flt.Q.value = 2;
       osc.connect(flt); sg.connect(flt); flt.connect(gain); gain.connect(masterOutput);
       osc.start(); sub.start();
-      shapeSound = { osc, sub, gain };
+      shapeSound = { osc: osc, sub: sub, gain: gain };
     }
 
     function stopShapeSound() {
       if (!shapeSound || !audioCtx) return;
       try {
         shapeSound.gain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.2);
-        const s = shapeSound;
-        setTimeout(() => { try { s.osc.stop(); s.sub.stop(); } catch(e){} }, 400);
+        var s = shapeSound;
+        setTimeout(function() { try { s.osc.stop(); s.sub.stop(); } catch(e){} }, 400);
       } catch(e) {}
       shapeSound = null;
     }
 
     // ─── TEXTURES ────────────────────────────────────────────────────────────────
-
-    // Standard repeating linear text tile
     function makeLinearTexture(bg, fg, words, seed0, fontSize, lineH, gap) {
-      const sz = 2048, c = document.createElement('canvas');
+      var sz = 2048, c = document.createElement('canvas');
       c.width = sz; c.height = sz;
-      const ctx = c.getContext('2d');
+      var ctx = c.getContext('2d');
       ctx.fillStyle = bg; ctx.fillRect(0, 0, sz, sz);
-      ctx.font = `900 ${fontSize}px Arial Black, sans-serif`;
+      ctx.font = '900 ' + fontSize + 'px Arial Black, sans-serif';
       ctx.fillStyle = fg;
-      let seed = seed0;
+      var seed = seed0;
       function rand() { seed = (seed*1664525+1013904223)&0xffffffff; return (seed>>>0)/0xffffffff; }
-      let y = lineH;
+      var y = lineH;
       while (y < sz + lineH) {
-        let x = 0;
+        var x = 0;
         while (x < sz + 600) {
-          const w = words[Math.floor(rand()*words.length)];
+          var w = words[Math.floor(rand()*words.length)];
           ctx.fillText(w, x, y); x += ctx.measureText(w).width + gap;
         }
         y += lineH;
@@ -140,60 +139,51 @@
       return new THREE.CanvasTexture(c);
     }
 
-    // Pyramid +/− texture: fewer, larger signs with generous spacing
+    // Pyramid: large +/- signs, fewer rows
     function makePlusMinusTexture() {
-      const sz = 2048, c = document.createElement('canvas');
+      var sz = 2048, c = document.createElement('canvas');
       c.width = sz; c.height = sz;
-      const ctx = c.getContext('2d');
+      var ctx = c.getContext('2d');
       ctx.fillStyle = '#1a7a1a'; ctx.fillRect(0, 0, sz, sz);
       ctx.fillStyle = '#000000';
-      const fontSize = 340;
-      const lineH = 420;
-      ctx.font = `900 ${fontSize}px Arial Black, sans-serif`;
+      var fontSize = 340, lineH = 420;
+      ctx.font = '900 ' + fontSize + 'px Arial Black, sans-serif';
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      const signs = ['+', '−'];
-      let seed = 42;
+      var signs = ['+', '\u2212'];
+      var seed = 42;
       function rand() { seed = (seed*1664525+1013904223)&0xffffffff; return (seed>>>0)/0xffffffff; }
-      let y = lineH * 0.5;
-      let row = 0;
+      var y = lineH * 0.5;
       while (y < sz + lineH) {
-        let x = 0;
+        var x = 0;
         while (x < sz + 200) {
-          const w = signs[Math.floor(rand()*signs.length)];
+          var w = signs[Math.floor(rand()*signs.length)];
           ctx.fillText(w, x, y);
           x += ctx.measureText(w).width + 120;
         }
-        y += lineH; row++;
+        y += lineH;
       }
       return new THREE.CanvasTexture(c);
     }
 
-    // Cone texture: many tiled lines of large text so every part of the cone
-    // surface is covered. ConeGeometry UV narrows toward the tip so we need
-    // enough density that text is always visible regardless of viewing angle.
+    // Cone: dense tiled SUGAR/SALT covering full surface
     function makeConeTexture() {
-      const sz = 2048, c = document.createElement('canvas');
+      var sz = 2048, c = document.createElement('canvas');
       c.width = sz; c.height = sz;
-      const ctx = c.getContext('2d');
+      var ctx = c.getContext('2d');
       ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, sz, sz);
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      const fontSize = 200;
-      ctx.font = `900 ${fontSize}px Arial Black, sans-serif`;
-      const words = ['SUGAR', 'SALT'];
-      const lineH = fontSize * 1.15;
-      const numLines = Math.ceil(sz / lineH) + 2;
-      for (let i = 0; i < numLines; i++) {
-        const y = (i + 0.5) * lineH;
-        const word = words[i % words.length];
-        // Draw the word repeated across the full width
-        const w = ctx.measureText(word).width;
-        const gap = 60;
-        let x = 0;
-        while (x < sz + w) {
-          ctx.fillText(word, x, y);
-          x += w + gap;
-        }
+      var fontSize = 200;
+      ctx.font = '900 ' + fontSize + 'px Arial Black, sans-serif';
+      var words = ['SUGAR', 'SALT'];
+      var lineH = fontSize * 1.15;
+      var numLines = Math.ceil(sz / lineH) + 2;
+      for (var i = 0; i < numLines; i++) {
+        var y = (i + 0.5) * lineH;
+        var word = words[i % words.length];
+        var w = ctx.measureText(word).width;
+        var gap = 60, x = 0;
+        while (x < sz + w) { ctx.fillText(word, x, y); x += w + gap; }
       }
       return new THREE.CanvasTexture(c);
     }
@@ -202,13 +192,13 @@
       return new THREE.MeshStandardMaterial({
         map: tex, roughness: 0.8, metalness: 0.05,
         transparent: true, opacity: 0,
-        side: THREE.FrontSide   // FrontSide only — avoids mirrored back-face text
+        side: THREE.FrontSide
       });
     }
 
     // ─── PYRAMID GEOMETRY ────────────────────────────────────────────────────────
     function makePyramidGeo(h, b) {
-      const geo = new THREE.BufferGeometry();
+      var geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
         0,h,0, -b,0,b,  b,0,b,   0,h,0,  b,0,b,  b,0,-b,
         0,h,0,  b,0,-b,-b,0,-b,  0,h,0, -b,0,-b, -b,0,b,
@@ -224,91 +214,95 @@
     }
 
     // ─── SCENE ───────────────────────────────────────────────────────────────────
-    document.getElementById('start-btn').addEventListener('click', async () => {
+    document.getElementById('start-btn').addEventListener('click', function() {
       masterOutput = initAudio();
-      if (audioCtx.state === 'suspended') await audioCtx.resume();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
       document.getElementById('overlay').style.display = 'none';
       document.getElementById('instructions').style.display = 'block';
       setupScene();
     });
 
-    let animRunning = false;
+    var animRunning = false;
 
     function setupScene() {
       if (animRunning) return;
       animRunning = true;
-      const aScene = document.querySelector('a-scene');
+      var aScene = document.querySelector('a-scene');
 
       function onReady() {
-        const scene = aScene.object3D;
+        var scene = aScene.object3D;
         scene.add(new THREE.AmbientLight(0xffffff, 1.4));
-        const dl = new THREE.DirectionalLight(0xffffff, 0.9);
+        var dl = new THREE.DirectionalLight(0xffffff, 0.9);
         dl.position.set(3,5,3); scene.add(dl);
 
-        // ── Textures & materials ──
-        const txSpaceTime = makeLinearTexture('#ffffff','#000000',['SPACE','TIME'],       137,100,120, 8);
-        const txPlusMinus = makePlusMinusTexture();
-        const txWaitGo    = makeLinearTexture('#ff69b4','#000000',['WAIT','GO'],           77,110,130,28);
-        const txKnow      = makeLinearTexture('#ffe600','#000000',['KNOW',"DON'T KNOW"], 291, 62,100,20);
-        const txEndsMeet  = makeLinearTexture('#1a3a8a','#ffffff',['ENDS MEET'],          333, 68,100,20);
-        const txCone      = makeConeTexture();
+        // ── Textures ──
+        var txSpaceTime = makeLinearTexture('#ffffff','#000000',['SPACE','TIME'],        137, 100, 120,  8);
+        var txPlusMinus = makePlusMinusTexture();
+        // Cube: very large font, few lines
+        var txWaitGo    = makeLinearTexture('#ff69b4','#000000',['WAIT','GO'],            77, 220, 260, 50);
+        // Torus: keep existing
+        var txKnow      = makeLinearTexture('#ffe600','#000000',["KNOW","DON'T KNOW"],  291,  62, 100, 20);
+        // Cylinder: larger font
+        var txEndsMeet  = makeLinearTexture('#1a3a8a','#ffffff',['ENDS MEET'],           333, 130, 155, 30);
+        var txCone      = makeConeTexture();
 
         // ── Meshes ──
-        const sphere    = new THREE.Mesh(new THREE.SphereGeometry(0.5,64,64),           mkMat(txSpaceTime));
-        const pyramid   = new THREE.Mesh(makePyramidGeo(0.7,0.45),                      mkMat(txPlusMinus));
-        const cube      = new THREE.Mesh(new THREE.BoxGeometry(0.7,0.7,0.7),            mkMat(txWaitGo));
-        const torus     = new THREE.Mesh(new THREE.TorusGeometry(0.42,0.16,32,100),     mkMat(txKnow));
-        const cone      = new THREE.Mesh(new THREE.ConeGeometry(0.4,1.0,64),            mkMat(txCone));
-        const cylinder  = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.9,32), mkMat(txEndsMeet));
 
-        // Torus knot — solid red, no texture
-        const knotMat = new THREE.MeshStandardMaterial({
+        // 1. Sphere — pre-rotated 90° so equatorial text band is upright
+        var sphere = new THREE.Mesh(new THREE.SphereGeometry(0.5,64,64), mkMat(txSpaceTime));
+        sphere.rotation.x = Math.PI / 2;
+
+        // 2. Pyramid — pre-rotated 90° so apex points up, faces visible
+        var pyramid = new THREE.Mesh(makePyramidGeo(0.7,0.45), mkMat(txPlusMinus));
+        pyramid.rotation.x = Math.PI / 2;
+
+        var cube     = new THREE.Mesh(new THREE.BoxGeometry(0.7,0.7,0.7),            mkMat(txWaitGo));
+        var torus    = new THREE.Mesh(new THREE.TorusGeometry(0.42,0.16,32,100),     mkMat(txKnow));
+        var cone     = new THREE.Mesh(new THREE.ConeGeometry(0.4,1.0,64),            mkMat(txCone));
+        var cylinder = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.9,32), mkMat(txEndsMeet));
+
+        // 7. Torus knot — solid red + wireframe + dot ring
+        var knotMat = new THREE.MeshStandardMaterial({
           color: 0xcc0000, roughness: 0.6, metalness: 0.1,
           transparent: true, opacity: 0
         });
-        const torusKnotGeo = new THREE.TorusKnotGeometry(0.38,0.12,120,16);
-        const torusKnot = new THREE.Mesh(torusKnotGeo, knotMat);
+        var torusKnotGeo = new THREE.TorusKnotGeometry(0.38,0.12,120,16);
+        var torusKnot = new THREE.Mesh(torusKnotGeo, knotMat);
 
-        // Black wireframe lines over the knot to reveal 3D structure
-        const wireMat = new THREE.LineBasicMaterial({
-          color: 0x000000, transparent: true, opacity: 0,
-          linewidth: 1  // note: linewidth >1 only works in WebGL2/some platforms
+        // Black wireframe — 25% thicker
+        var wireMat = new THREE.LineBasicMaterial({
+          color: 0x000000, transparent: true, opacity: 0, linewidth: 1.25
         });
-        const wireframe = new THREE.LineSegments(
-          new THREE.WireframeGeometry(torusKnotGeo), wireMat
-        );
-        torusKnot.add(wireframe);
+        torusKnot.add(new THREE.LineSegments(new THREE.WireframeGeometry(torusKnotGeo), wireMat));
 
-        // Pulsing dot ring — 12 white spheres orbiting in a circle around the knot
-        const DOT_COUNT  = 12;
-        const RING_R     = 0.72;   // ring radius (slightly larger than knot bounding sphere ~0.5)
-        const dotMat     = new THREE.MeshStandardMaterial({
-          color: 0xffffff, roughness: 0.4, metalness: 0.0,
-          transparent: true, opacity: 0
+        // Pulsing white dot ring
+        var DOT_COUNT = 12, RING_R = 0.72;
+        var dotMat = new THREE.MeshStandardMaterial({
+          color: 0xffffff, roughness: 0.4, metalness: 0.0, transparent: true, opacity: 0
         });
-        const dots = [];
-        for (let i = 0; i < DOT_COUNT; i++) {
-          const angle = (i / DOT_COUNT) * Math.PI * 2;
-          const dot = new THREE.Mesh(new THREE.SphereGeometry(0.055, 16, 16), dotMat.clone());
-          dot.position.set(Math.cos(angle) * RING_R, Math.sin(angle) * RING_R, 0);
+        var dots = [];
+        for (var i = 0; i < DOT_COUNT; i++) {
+          var angle = (i / DOT_COUNT) * Math.PI * 2;
+          var dot = new THREE.Mesh(new THREE.SphereGeometry(0.055,16,16), dotMat.clone());
+          dot.position.set(Math.cos(angle)*RING_R, Math.sin(angle)*RING_R, 0);
           torusKnot.add(dot);
-          dots.push({ mesh: dot, angle });
+          dots.push(dot);
         }
 
-        const MESHES = [sphere, pyramid, cube, torus, cone, cylinder, torusKnot];
+        var MESHES = [sphere, pyramid, cube, torus, cone, cylinder, torusKnot];
 
-        // ── Pivot (smoothed world-space anchor) ──
-        const pivot = new THREE.Group();
+        // ── Pivot ──
+        var pivot = new THREE.Group();
         scene.add(pivot);
-        MESHES.forEach(m => { m.visible = false; pivot.add(m); });
+        MESHES.forEach(function(m) { m.visible = false; pivot.add(m); });
 
-        const sPos = new THREE.Vector3(), sQuat = new THREE.Quaternion();
-        let anchorReady = false;
-        const markerEl = document.getElementById('main-marker');
+        var sPos = new THREE.Vector3(), sQuat = new THREE.Quaternion();
+        var anchorReady = false;
+        var markerEl = document.getElementById('main-marker');
 
         function updateAnchor() {
-          if (!markerEl?.object3D?.visible) return;
-          const wp = new THREE.Vector3(), wq = new THREE.Quaternion();
+          if (!markerEl || !markerEl.object3D || !markerEl.object3D.visible) return;
+          var wp = new THREE.Vector3(), wq = new THREE.Quaternion();
           markerEl.object3D.getWorldPosition(wp);
           markerEl.object3D.getWorldQuaternion(wq);
           if (!anchorReady) { sPos.copy(wp); sQuat.copy(wq); anchorReady = true; }
@@ -323,40 +317,34 @@
 
         function setOpacity(mesh, v) {
           v = clamp(v,0,1);
-          const apply = m => { if (m) { m.transparent=true; m.opacity=v; } };
-          if (Array.isArray(mesh.material)) mesh.material.forEach(apply);
-          else apply(mesh.material);
-          // Propagate to dot spheres and wireframe children
-          mesh.children.forEach(child => {
-            if (child.material) {
-              child.material.transparent = true;
-              child.material.opacity = v;
-            }
+          function apply(m) { if (m) { m.transparent=true; m.opacity=v; } }
+          if (Array.isArray(mesh.material)) mesh.material.forEach(apply); else apply(mesh.material);
+          mesh.children.forEach(function(child) {
+            if (child.material) { child.material.transparent=true; child.material.opacity=v; }
           });
         }
 
         // ── Rise-Hold-Fade factory ──
-        // Duration 12500ms: ~2500ms rise, ~8500ms hold, ~1500ms fade (FADE_START=0.88)
+        // FADE_START 0.88: with 12500ms, hold lasts ~10750ms before fade
         function makeAct(mesh, sndIdx, durMs, holdY, holdSc, rotX, rotY, rotZ, riseFrac) {
           riseFrac = riseFrac || 0.2;
           return {
             duration: durMs, soundIndex: sndIdx, meshes: [mesh],
-            init() {
-              mesh.position.set(0,0,0); mesh.scale.setScalar(0.01);
-              mesh.rotation.set(0,0,0); setOpacity(mesh, 0);
+            init: function() {
+              mesh.position.set(0,0,0); mesh.scale.setScalar(0.01); setOpacity(mesh,0);
+              // Restore pre-set orientation — reset only position/scale/opacity, not base rotation
             },
-            tick(t) {
-              const FADE_START = 0.88;
-              let pos, sc, op;
+            tick: function(t) {
+              var FADE_START = 0.88;
+              var pos, sc, op;
               if (t <= riseFrac) {
-                const rt = t / riseFrac, e = easeOut(rt);
-                pos = holdY * e;
-                sc  = 0.01 + (holdSc - 0.01) * e;
-                op  = rt < 0.12 ? rt / 0.12 : 1;
+                var rt = t/riseFrac, e = easeOut(rt);
+                pos = holdY*e; sc = 0.01+(holdSc-0.01)*e;
+                op = rt<0.12 ? rt/0.12 : 1;
               } else {
                 pos = holdY; sc = holdSc;
-                const ht = (t - riseFrac) / (1 - riseFrac);
-                op = ht > FADE_START ? (1 - ht) / (1 - FADE_START) : 1;
+                var ht = (t-riseFrac)/(1-riseFrac);
+                op = ht>FADE_START ? (1-ht)/(1-FADE_START) : 1;
               }
               mesh.position.set(0, pos, 0);
               mesh.scale.setScalar(sc);
@@ -371,67 +359,65 @@
         }
 
         // ── ACTS ──
-        const ACTS = [
-          // 1. Sphere — dual-axis tumble (rotX + rotY)
-          makeAct(sphere,    0, 12500,  1.8, 1.20,  0.004, 0.007, 0.000, 0.20),
-          // 2. Pyramid — green, large +/−
-          makeAct(pyramid,   1, 12500,  1.8, 1.10,  0.005, 0.008, 0.003, 0.20),
-          // 3. Cube — pink, WAIT/GO
-          makeAct(cube,      2, 12500,  1.8, 1.10,  0.005, 0.007, 0.004, 0.20),
-          // 4. Torus — yellow, KNOW/DON'T KNOW
-          makeAct(torus,     3, 12500,  1.8, 1.15,  0.006, 0.010, 0.002, 0.20),
-          // 5. Cone — further out, tip-over tumble on X
-          makeAct(cone,      4, 12500,  2.4, 1.40,  0.012, 0.000, 0.000, 0.20),
-          // 6. Cylinder — blue, slow roll
-          makeAct(cylinder,  5, 12500,  1.8, 1.15,  0.000, 0.008, 0.018, 0.20),
-          // 7. Knot — red solid + black wireframe + pulsing white dot ring
+        var ACTS = [
+          // 1. Sphere — 30% slower rise (riseFrac 0.26), dual-axis rotation
+          makeAct(sphere,   0, 12500, 1.8, 1.20, 0.004, 0.007, 0.000, 0.26),
+          // 2. Pyramid — upright, gentle all-axis tumble
+          makeAct(pyramid,  1, 12500, 1.8, 1.10, 0.005, 0.008, 0.003, 0.20),
+          // 3. Cube — large text
+          makeAct(cube,     2, 12500, 1.8, 1.10, 0.005, 0.007, 0.004, 0.20),
+          // 4. Torus — good as-is
+          makeAct(torus,    3, 12500, 1.8, 1.15, 0.006, 0.010, 0.002, 0.20),
+          // 5. Cone — further out, tip-over tumble
+          makeAct(cone,     4, 12500, 2.4, 1.40, 0.012, 0.000, 0.000, 0.20),
+          // 6. Cylinder — slow roll
+          makeAct(cylinder, 5, 12500, 1.8, 1.15, 0.000, 0.008, 0.018, 0.20),
+          // 7. Knot — 3s longer (15500ms), lower/quieter sound (max vol 0.22 vs 0.42)
           {
-            duration: 12500, soundIndex: 6, meshes: [torusKnot],
-            init() {
+            duration: 15500, soundIndex: 6, meshes: [torusKnot],
+            init: function() {
               torusKnot.position.set(0,0,0); torusKnot.scale.setScalar(0.01);
-              torusKnot.rotation.set(0,0,0); setOpacity(torusKnot, 0);
-              wireMat.opacity = 0;
+              torusKnot.rotation.set(0,0,0); setOpacity(torusKnot,0); wireMat.opacity=0;
             },
-            tick(t) {
-              const riseFrac = 0.2, FADE_START = 0.88;
-              const holdY = 1.8, holdSc = 1.25;
-              let pos, sc, op;
-              if (t <= riseFrac) {
-                const rt = t / riseFrac, e = easeOut(rt);
-                pos = holdY * e; sc = 0.01 + (holdSc - 0.01) * e;
-                op = rt < 0.12 ? rt / 0.12 : 1;
+            tick: function(t) {
+              var riseFrac=0.16, FADE_START=0.88; // shorter rise fraction since total is longer
+              var holdY=1.8, holdSc=1.25;
+              var pos, sc, op;
+              if (t<=riseFrac) {
+                var rt=t/riseFrac, e=easeOut(rt);
+                pos=holdY*e; sc=0.01+(holdSc-0.01)*e; op=rt<0.12?rt/0.12:1;
               } else {
-                pos = holdY; sc = holdSc;
-                const ht = (t - riseFrac) / (1 - riseFrac);
-                op = ht > FADE_START ? (1 - ht) / (1 - FADE_START) : 1;
+                pos=holdY; sc=holdSc;
+                var ht=(t-riseFrac)/(1-riseFrac);
+                op=ht>FADE_START?(1-ht)/(1-FADE_START):1;
               }
-              torusKnot.position.set(0, pos, 0);
+              torusKnot.position.set(0,pos,0);
               torusKnot.scale.setScalar(sc);
-              torusKnot.rotation.x += 0.007;
-              torusKnot.rotation.y += 0.011;
-              torusKnot.rotation.z += 0.004;
-              knotMat.transparent = true; knotMat.opacity = op;
-              // Wireframe slightly less opaque than body
-              wireMat.transparent = true; wireMat.opacity = op * 0.55;
-              // Pulse each dot with a rippling sine wave
-              const now = t * 12.5;
-              dots.forEach((d, i) => {
-                const phase = (i / DOT_COUNT) * Math.PI * 2;
-                const pulse = 0.5 + 0.5 * Math.sin(now * 3.5 + phase);
-                d.mesh.scale.setScalar(0.4 + pulse * 1.4);
-                d.mesh.material.opacity = op * (0.4 + pulse * 0.6);
-              });
+              torusKnot.rotation.x+=0.007;
+              torusKnot.rotation.y+=0.011;
+              torusKnot.rotation.z+=0.004;
+              knotMat.transparent=true; knotMat.opacity=op;
+              wireMat.transparent=true; wireMat.opacity=op*0.55;
+              // Quieter: peak vol 0.22 (half of other shapes)
               if (shapeSound && audioCtx)
-                shapeSound.gain.gain.setTargetAtTime(clamp(op*0.42,0,0.42), audioCtx.currentTime, 0.08);
+                shapeSound.gain.gain.setTargetAtTime(clamp(op*0.22,0,0.22), audioCtx.currentTime, 0.08);
+              // Pulsing dots
+              var now = t*15.5;
+              dots.forEach(function(dot, i) {
+                var phase=(i/DOT_COUNT)*Math.PI*2;
+                var pulse=0.5+0.5*Math.sin(now*3.5+phase);
+                dot.scale.setScalar(0.4+pulse*1.4);
+                dot.material.opacity=op*(0.4+pulse*0.6);
+              });
             }
-          },
+          }
         ];
 
         // ── Sequence runner ──
-        let curAct = 0, actStart = null, inGap = false, gapStart = null;
-        const GAP_MS = 600;
+        var curAct=0, actStart=null, inGap=false, gapStart=null;
+        var GAP_MS=600;
 
-        MESHES.forEach(m => m.visible = false);
+        MESHES.forEach(function(m) { m.visible=false; });
         ACTS[0].init();
 
         function animate(ts) {
@@ -440,39 +426,39 @@
           if (!anchorReady) return;
 
           if (inGap) {
-            if (ts - gapStart >= GAP_MS) {
-              inGap = false; curAct = 0; actStart = ts;
-              MESHES.forEach(m => m.visible = false);
+            if (ts-gapStart>=GAP_MS) {
+              inGap=false; curAct=0; actStart=ts;
+              MESHES.forEach(function(m){m.visible=false;});
               ACTS[0].init();
-              ACTS[0].meshes.forEach(m => m.visible = true);
+              ACTS[0].meshes.forEach(function(m){m.visible=true;});
               startShapeSound(ACTS[0].soundIndex);
             }
             return;
           }
 
           if (!actStart) {
-            actStart = ts;
-            MESHES.forEach(m => m.visible = false);
-            ACTS[curAct].meshes.forEach(m => m.visible = true);
+            actStart=ts;
+            MESHES.forEach(function(m){m.visible=false;});
+            ACTS[curAct].meshes.forEach(function(m){m.visible=true;});
             startShapeSound(ACTS[curAct].soundIndex);
           }
 
-          const t = clamp((ts - actStart) / ACTS[curAct].duration, 0, 1);
-          MESHES.forEach(m => m.visible = false);
-          ACTS[curAct].meshes.forEach(m => m.visible = true);
+          var t = clamp((ts-actStart)/ACTS[curAct].duration, 0, 1);
+          MESHES.forEach(function(m){m.visible=false;});
+          ACTS[curAct].meshes.forEach(function(m){m.visible=true;});
           ACTS[curAct].tick(t);
 
-          if (t >= 1) {
-            ACTS[curAct].meshes.forEach(m => { setOpacity(m, 0); m.visible = false; });
+          if (t>=1) {
+            ACTS[curAct].meshes.forEach(function(m){setOpacity(m,0); m.visible=false;});
             stopShapeSound();
             curAct++;
-            if (curAct >= ACTS.length) {
-              inGap = true; gapStart = ts;
+            if (curAct>=ACTS.length) {
+              inGap=true; gapStart=ts;
             } else {
-              actStart = ts;
-              MESHES.forEach(m => m.visible = false);
+              actStart=ts;
+              MESHES.forEach(function(m){m.visible=false;});
               ACTS[curAct].init();
-              ACTS[curAct].meshes.forEach(m => m.visible = true);
+              ACTS[curAct].meshes.forEach(function(m){m.visible=true;});
               startShapeSound(ACTS[curAct].soundIndex);
             }
           }
