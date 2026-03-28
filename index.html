@@ -292,7 +292,7 @@
         var MESHES = [sphere, pyramid, cube, torus, cone, cylinder, torusKnot];
 
         // Knot chord state
-        var knotChordFired = false;
+        var knotChordFired = false, knotHeld = false;
 
         // ── Pivot ──
         var pivot = new THREE.Group();
@@ -328,29 +328,37 @@
         }
 
         // ── Rise-Hold-Fade factory ──
-        // FADE_START 0.88: with 12500ms, hold lasts ~10750ms before fade
+        // During rise: animate position + scale. Once held: ONLY rotate — no positional updates.
         function makeAct(mesh, sndIdx, durMs, holdY, holdSc, rotX, rotY, rotZ, riseFrac) {
           riseFrac = riseFrac || 0.2;
+          var held = false; // locks after first frame of hold phase
           return {
             duration: durMs, soundIndex: sndIdx, meshes: [mesh],
             init: function() {
               mesh.position.set(0,0,0); mesh.scale.setScalar(0.01); setOpacity(mesh,0);
-              // Restore pre-set orientation — reset only position/scale/opacity, not base rotation
+              held = false;
             },
             tick: function(t) {
               var FADE_START = 0.88;
-              var pos, sc, op;
+              var op;
               if (t <= riseFrac) {
+                // Rise: move and scale
+                held = false;
                 var rt = t/riseFrac, e = easeOut(rt);
-                pos = holdY*e; sc = 0.01+(holdSc-0.01)*e;
+                mesh.position.set(0, holdY*e, 0);
+                mesh.scale.setScalar(0.01+(holdSc-0.01)*e);
                 op = rt<0.12 ? rt/0.12 : 1;
               } else {
-                pos = holdY; sc = holdSc;
+                // Hold/fade: lock position and scale on first entry, then only rotate
+                if (!held) {
+                  mesh.position.set(0, holdY, 0);
+                  mesh.scale.setScalar(holdSc);
+                  held = true;
+                }
                 var ht = (t-riseFrac)/(1-riseFrac);
                 op = ht>FADE_START ? (1-ht)/(1-FADE_START) : 1;
               }
-              mesh.position.set(0, pos, 0);
-              mesh.scale.setScalar(sc);
+              // Rotation always continues
               mesh.rotation.x += rotX;
               mesh.rotation.y += rotY;
               mesh.rotation.z += rotZ;
@@ -381,59 +389,78 @@
             init: function() {
               torusKnot.position.set(0,0,0); torusKnot.scale.setScalar(0.01);
               torusKnot.rotation.set(0,0,0); setOpacity(torusKnot,0); wireMat.opacity=0;
-              knotChordFired = false;
+              knotChordFired = false; knotHeld = false;
             },
             tick: function(t) {
               var riseFrac=0.16, FADE_START=0.88;
               var holdY=1.8, holdSc=1.25;
-              var pos, sc, op;
+              var op;
+              // Chord fires 0.5s before knot arrives (0.5/15500 = 0.032 before riseFrac)
+              var chordT = riseFrac - (0.5 / 15.5);
               if (t<=riseFrac) {
                 var rt=t/riseFrac, e=easeOut(rt);
-                pos=holdY*e; sc=0.01+(holdSc-0.01)*e; op=rt<0.12?rt/0.12:1;
+                if (!knotHeld) {
+                  torusKnot.position.set(0, holdY*e, 0);
+                  torusKnot.scale.setScalar(0.01+(holdSc-0.01)*e);
+                }
+                op=rt<0.12?rt/0.12:1;
               } else {
-                pos=holdY; sc=holdSc;
+                if (!knotHeld) {
+                  torusKnot.position.set(0, holdY, 0);
+                  torusKnot.scale.setScalar(holdSc);
+                  knotHeld = true;
+                }
                 var ht=(t-riseFrac)/(1-riseFrac);
                 op=ht>FADE_START?(1-ht)/(1-FADE_START):1;
               }
-              torusKnot.position.set(0,pos,0);
-              torusKnot.scale.setScalar(sc);
+              // Only rotate — no position drift
               torusKnot.rotation.x+=0.007;
               torusKnot.rotation.y+=0.011;
               torusKnot.rotation.z+=0.004;
               knotMat.transparent=true; knotMat.opacity=op;
               wireMat.transparent=true; wireMat.opacity=op*0.55;
-              // Rise phase: quiet single C3 note via shapeSound
-              if (t<=riseFrac) {
-                if (shapeSound && audioCtx)
-                  shapeSound.gain.gain.setTargetAtTime(clamp(op*0.18,0,0.18), audioCtx.currentTime, 0.08);
-              } else {
-                // Once resting: silence the oscillator (chord handles audio)
-                if (shapeSound && audioCtx)
-                  shapeSound.gain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.3);
-                // Fire the C major chord exactly once when knot arrives
-                if (!knotChordFired && audioCtx) {
-                  knotChordFired = true;
-                  // C major: C3(130.8) E3(164.8) G3(196.0) — piano-style attack+decay
-                  [130.8, 164.8, 196.0].forEach(function(freq) {
-                    var osc = audioCtx.createOscillator();
-                    var env = audioCtx.createGain();
-                    osc.type = 'sine'; osc.frequency.value = freq;
-                    // Sub harmonic for body
-                    var sub = audioCtx.createOscillator();
-                    sub.type = 'triangle'; sub.frequency.value = freq * 2;
-                    var sg = audioCtx.createGain(); sg.gain.value = 0.3;
-                    sub.connect(sg); sg.connect(env);
-                    osc.connect(env); env.connect(masterOutput);
-                    // Piano envelope: sharp attack, medium decay, long release
-                    var now2 = audioCtx.currentTime;
-                    env.gain.setValueAtTime(0, now2);
-                    env.gain.linearRampToValueAtTime(0.28, now2 + 0.01);  // fast attack
-                    env.gain.exponentialRampToValueAtTime(0.12, now2 + 0.4); // decay
-                    env.gain.exponentialRampToValueAtTime(0.001, now2 + 3.5); // long release
-                    osc.start(now2); sub.start(now2);
-                    osc.stop(now2 + 4); sub.stop(now2 + 4);
-                  });
-                }
+              // Single C3 note during rise, fades when chord fires
+              if (shapeSound && audioCtx) {
+                var sVol = t < chordT ? clamp(op*0.15,0,0.15) : 0;
+                shapeSound.gain.gain.setTargetAtTime(sVol, audioCtx.currentTime, 0.3);
+              }
+              // 6-note C major chord with string resonance, fires 0.5s before arrival
+              if (!knotChordFired && audioCtx && t >= chordT) {
+                knotChordFired = true;
+                // Notes: C2, G2, C3, E3, G3, C4 — two octaves, open voicing
+                var notes = [
+                  { freq: 65.4,  vol: 0.32 }, // C2  — deep bass
+                  { freq: 98.0,  vol: 0.28 }, // G2  — bass fifth
+                  { freq: 130.8, vol: 0.24 }, // C3  — mid root
+                  { freq: 164.8, vol: 0.20 }, // E3  — mid third
+                  { freq: 196.0, vol: 0.18 }, // G3  — mid fifth
+                  { freq: 261.6, vol: 0.15 }, // C4  — high root
+                ];
+                var now2 = audioCtx.currentTime;
+                notes.forEach(function(note) {
+                  // String timbre: sawtooth through resonant bandpass = bowed string character
+                  var saw  = audioCtx.createOscillator();
+                  saw.type = 'sawtooth'; saw.frequency.value = note.freq;
+                  // Resonant bandpass centred on note freq — creates string formant
+                  var bp   = audioCtx.createBiquadFilter();
+                  bp.type  = 'bandpass'; bp.frequency.value = note.freq * 2.5; bp.Q.value = 18;
+                  // Second harmonic adds shimmer
+                  var saw2 = audioCtx.createOscillator();
+                  saw2.type = 'sawtooth'; saw2.frequency.value = note.freq * 2;
+                  var g2   = audioCtx.createGain(); g2.gain.value = 0.18; saw2.connect(g2);
+                  var env  = audioCtx.createGain();
+                  saw.connect(bp); bp.connect(env);
+                  g2.connect(env);
+                  env.connect(masterOutput);
+                  // String-like envelope: gentle bow attack, long sustain, slow release
+                  env.gain.setValueAtTime(0, now2);
+                  env.gain.linearRampToValueAtTime(note.vol, now2 + 0.06);   // 60ms bow attack
+                  env.gain.exponentialRampToValueAtTime(note.vol * 0.75, now2 + 0.5); // settle
+                  env.gain.setValueAtTime(note.vol * 0.75, now2 + 5.5);      // hold 5s
+                  env.gain.exponentialRampToValueAtTime(0.001, now2 + 8.5);  // 3s release
+                  saw.start(now2); saw2.start(now2);
+                  saw.stop(now2 + 9); saw2.stop(now2 + 9);
+                });
               }
               // Pulsing dots
               var now = t*15.5;
