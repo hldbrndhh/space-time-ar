@@ -3,19 +3,24 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
-  <title>Space Time - Marker v4</title>
+  <title>Space Time - AR</title>
   <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
   <style>
     body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
     #overlay {
       position: fixed; inset: 0; background: #000; z-index: 9999;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 48px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 40px;
     }
     #overlay p {
       font-family: 'Helvetica Neue', Helvetica, sans-serif; font-weight: 300;
       color: rgba(255,255,255,0.9); font-size: 14px; letter-spacing: 3px;
       text-transform: uppercase; text-align: center; padding: 0 60px; line-height: 2.8;
+    }
+    #sound-note {
+      font-family: 'Helvetica Neue', Helvetica, sans-serif; font-weight: 400;
+      font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
+      color: rgba(255,255,255,0.45); text-align: center;
     }
     #start-btn {
       font-family: 'Helvetica Neue', Helvetica, sans-serif; font-weight: 400;
@@ -34,6 +39,7 @@
 <body>
   <div id="overlay">
     <p>Point the phone<br/>at the horse<br/>in the picture</p>
+    <div id="sound-note">🔊 turn the sound on</div>
     <button id="start-btn">activate camera</button>
   </div>
   <div id="instructions">point camera at the horse in the picture</div>
@@ -74,23 +80,25 @@
       });
       droneGain.connect(convolver); convolver.connect(limiter);
       droneGain.connect(limiter);
-      droneGain.gain.setTargetAtTime(0.20, audioCtx.currentTime, 2.5);
+      droneGain.gain.setTargetAtTime(0.18, audioCtx.currentTime, 2.5);
 
+      // Confirmation beep
       const testOsc = audioCtx.createOscillator();
-      const testGain = audioCtx.createGain(); testGain.gain.value = 0.3;
+      const testGain = audioCtx.createGain(); testGain.gain.value = 0.25;
       testOsc.connect(testGain); testGain.connect(limiter);
-      testOsc.frequency.value = 440; testOsc.start(); testOsc.stop(audioCtx.currentTime + 0.15);
+      testOsc.frequency.value = 440; testOsc.start(); testOsc.stop(audioCtx.currentTime + 0.12);
 
       return limiter;
     }
 
     const shapeSoundConfigs = [
-      { freq: 220,   type: 'sine',     filterFreq: 800  },
-      { freq: 174.6, type: 'square',   filterFreq: 600  },
-      { freq: 261.6, type: 'triangle', filterFreq: 1200 },
-      { freq: 196.0, type: 'sine',     filterFreq: 900  },
-      { freq: 293.7, type: 'triangle', filterFreq: 1400 },
-      { freq: 130.8, type: 'square',   filterFreq: 500  },
+      { freq: 220,   type: 'sine',     filterFreq: 800  }, // 0 sphere
+      { freq: 261.6, type: 'triangle', filterFreq: 1200 }, // 1 pyramids
+      { freq: 174.6, type: 'square',   filterFreq: 600  }, // 2 cube
+      { freq: 196.0, type: 'sine',     filterFreq: 900  }, // 3 torus
+      { freq: 349.2, type: 'triangle', filterFreq: 1600 }, // 4 cone
+      { freq: 130.8, type: 'square',   filterFreq: 500  }, // 5 cylinder
+      { freq: 293.7, type: 'triangle', filterFreq: 1400 }, // 6 torus knot
     ];
 
     function startShapeSound(index) {
@@ -107,21 +115,17 @@
       shapeSound = { osc, subOsc, gain };
     }
 
-    function setShapeSoundVolume(t) {
+    function setShapeSoundVolume(vol) {
       if (!shapeSound || !audioCtx) return;
-      let vol;
-      if (t < 0.6)      vol = (t / 0.6) * 0.45;
-      else if (t < 0.8) vol = 0.45;
-      else              vol = ((1 - t) / 0.2) * 0.45;
-      shapeSound.gain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
+      shapeSound.gain.gain.setTargetAtTime(Math.max(0, Math.min(0.45, vol)), audioCtx.currentTime, 0.08);
     }
 
     function stopShapeSound() {
       if (!shapeSound || !audioCtx) return;
       try {
-        shapeSound.gain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.3);
+        shapeSound.gain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.25);
         const s = shapeSound;
-        setTimeout(() => { try { s.osc.stop(); s.subOsc.stop(); } catch(e){} }, 600);
+        setTimeout(() => { try { s.osc.stop(); s.subOsc.stop(); } catch(e){} }, 500);
       } catch(e) {}
       shapeSound = null;
     }
@@ -147,28 +151,49 @@
       return new THREE.CanvasTexture(c);
     }
 
-    function makeSpaceTimeTexture() { return makeLinearTexture('#ffffff','#000000',['SPACE','TIME'],          137, 80, 100, 0);  }
-    function makeIdeaTexture()      { return makeLinearTexture('#ff69b4','#000000',['IDEA','NO IDEA'],        291, 75, 100, 20); }
-    function makePlusMinusTexture() { return makeLinearTexture('#1a7a1a','#000000',['+','−'],                  42, 72,  88, 10); }
-    function makeWaitGoTexture()    { return makeLinearTexture('#ff6600','#000000',['WAIT','GO'],              77, 80, 100, 20); }
-    function makeSmileTexture()     { return makeLinearTexture('#ffe600','#000000',['\u{1F642}','\u{1F641}'],199, 80, 100, 24); }
-    function makeKnowTexture()      { return makeLinearTexture('#0a0a4a','#ffffff',['KNOW',"DON'T KNOW"],     333, 62, 100, 20); }
-
-    function mat(tex) {
-      return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05, transparent: true });
-    }
-
-    function makePyramidMesh(tex) {
-      const geo = new THREE.BufferGeometry(); const h = 2.2, b = 1.2;
-      const vertices = new Float32Array([0,h,0,-b,0,b,b,0,b, 0,h,0,b,0,b,b,0,-b, 0,h,0,b,0,-b,-b,0,-b, 0,h,0,-b,0,-b,-b,0,b, -b,0,b,-b,0,-b,b,0,b, b,0,b,-b,0,-b,b,0,-b]);
-      const uvs = new Float32Array([0.5,1,0,0,1,0, 0.5,1,0,0,1,0, 0.5,1,0,0,1,0, 0.5,1,0,0,1,0, 0,0,0,1,1,0, 1,0,0,1,1,1]);
+    // ─── PYRAMID GEOMETRY ────────────────────────────────────────────────────────
+    function makePyramidGeo(h, b) {
+      const geo = new THREE.BufferGeometry();
+      const vertices = new Float32Array([
+        0,h,0, -b,0,b,  b,0,b,
+        0,h,0,  b,0,b,  b,0,-b,
+        0,h,0,  b,0,-b, -b,0,-b,
+        0,h,0, -b,0,-b, -b,0,b,
+        -b,0,b, -b,0,-b, b,0,b,
+         b,0,b, -b,0,-b, b,0,-b
+      ]);
+      const uvs = new Float32Array([
+        0.5,1,0,0,1,0,  0.5,1,0,0,1,0,
+        0.5,1,0,0,1,0,  0.5,1,0,0,1,0,
+        0,0,0,1,1,0,    1,0,0,1,1,1
+      ]);
       geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
       geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
       geo.computeVertexNormals();
-      return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05, transparent: true, side: THREE.DoubleSide }));
+      return geo;
     }
 
-    // ─── SCENE SETUP ─────────────────────────────────────────────────────────────
+    function stdMat(tex) {
+      return new THREE.MeshStandardMaterial({
+        map: tex, roughness: 0.85, metalness: 0.05,
+        transparent: true, opacity: 0, side: THREE.DoubleSide
+      });
+    }
+
+    function setOpacity(mesh, v) {
+      const m = mesh.material;
+      if (Array.isArray(m)) m.forEach(mi => { mi.opacity = v; });
+      else m.opacity = v;
+    }
+
+    function lerp(a, b, t) { return a + (b - a) * t; }
+
+    function easeInOut(t) {
+      t = Math.max(0, Math.min(1, t));
+      return t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+    }
+
+    // ─── SCENE ───────────────────────────────────────────────────────────────────
     document.getElementById('start-btn').addEventListener('click', async () => {
       masterOutput = initAudio();
       if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
@@ -177,174 +202,289 @@
       setupScene();
     });
 
-    let animRunning = false;
-
     function setupScene() {
-      if (animRunning) return;
-      animRunning = true;
-
-      // ── Wait for A-Frame scene to be ready, then steal its renderer/camera ──
       const aScene = document.querySelector('a-scene');
 
       function onSceneReady() {
-        const renderer = aScene.renderer;
-        const camera   = aScene.camera;
-        const scene    = aScene.object3D;
+        const scene = aScene.object3D;
 
-        scene.add(new THREE.AmbientLight(0xffffff, 1.2));
-        const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-        dir.position.set(3, 5, 3); scene.add(dir);
+        scene.add(new THREE.AmbientLight(0xffffff, 1.4));
+        const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+        dir.position.set(3,5,3); scene.add(dir);
 
-        // ── Shapes ──
-        const sphere    = new THREE.Mesh(new THREE.SphereGeometry(0.4, 64, 64),             mat(makeSpaceTimeTexture()));
-        const cube      = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6),              mat(makeIdeaTexture()));
-        const pyramid   = makePyramidMesh(makePlusMinusTexture());
-        const torus     = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.15, 32, 100),       mat(makeWaitGoTexture()));
-        const icosa     = new THREE.Mesh(new THREE.IcosahedronGeometry(0.44, 1),            mat(makeSmileTexture()));
-        const torusKnot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.36, 0.12, 120, 16), mat(makeKnowTexture()));
-        const shapes = [sphere, cube, pyramid, torus, icosa, torusKnot];
+        // ── Textures ──
+        const texSpaceTime = makeLinearTexture('#ffffff','#000000',['SPACE','TIME'],         137, 80,100, 0);
+        const texPlusMinus = makeLinearTexture('#1a7a1a','#000000',['+','−'],                 42, 72, 88,10);
+        const texWaitGo    = makeLinearTexture('#ff69b4','#000000',['WAIT','GO'],             77, 80,100,20);
+        const texKnow      = makeLinearTexture('#ffe600','#000000',['KNOW',"DON'T KNOW"],    291, 62,100,20);
+        const texSugarSalt = makeLinearTexture('#ff6600','#000000',['SUGAR','SALT'],         199, 75,100,20);
+        const texEndsMeet  = makeLinearTexture('#1a3a8a','#ffffff',['ENDS MEET'],            333, 68,100,20);
+        const texQuestion  = makeLinearTexture('#cc0000','#ffffff',['?'],                    555,120,120,30);
 
-        // ── Pivot group: objects live here, positioned in world space ──
+        // ── Meshes ──
+        const sphere    = new THREE.Mesh(new THREE.SphereGeometry(0.5, 64, 64),              stdMat(texSpaceTime));
+        const pyramidL  = new THREE.Mesh(makePyramidGeo(0.7, 0.45),                          stdMat(texPlusMinus));
+        const pyramidR  = new THREE.Mesh(makePyramidGeo(0.7, 0.45),                          stdMat(texPlusMinus));
+        const cube      = new THREE.Mesh(new THREE.BoxGeometry(0.7,0.7,0.7),                 stdMat(texWaitGo));
+        const torus     = new THREE.Mesh(new THREE.TorusGeometry(0.42,0.16,32,100),          stdMat(texKnow));
+        const cone      = new THREE.Mesh(new THREE.ConeGeometry(0.35,0.75,32),               stdMat(texSugarSalt));
+        const cylinder  = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.9,32),      stdMat(texEndsMeet));
+        const torusKnot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.38,0.12,120,16),      stdMat(texQuestion));
+
+        const allMeshes = [sphere, pyramidL, pyramidR, cube, torus, cone, cylinder, torusKnot];
+
+        // ── Pivot anchored to marker ──
         const pivot = new THREE.Group();
         scene.add(pivot);
-        shapes.forEach(s => { s.visible = false; pivot.add(s); });
+        allMeshes.forEach(m => { m.visible = false; pivot.add(m); });
 
-        const rotSpeeds = [
-          { x:0.005, y:0.008, z:0.003 },
-          { x:0.009, y:0.006, z:0.004 },
-          { x:0.002, y:0.007, z:0.001 },
-          { x:0.006, y:0.010, z:0.002 },
-          { x:0.007, y:0.005, z:0.006 },
-          { x:0.004, y:0.009, z:0.005 },
-        ];
-
-        // Exit directions in marker-local XZ (flat plane), normalised
-        const trajectories = [
-          { xCurve: -1.0, zCurve:  0.3 },
-          { xCurve:  1.0, zCurve: -0.3 },
-          { xCurve: -0.8, zCurve: -0.4 },
-          { xCurve:  1.0, zCurve:  0.2 },
-          { xCurve: -1.0, zCurve:  0.1 },
-          { xCurve:  0.7, zCurve: -0.2 },
-        ];
-
-        // ── Smoothed anchor: exponential low-pass on marker world position ──
+        // ── Smoothed marker anchor ──
         const smoothPos = new THREE.Vector3();
         const smoothQuat = new THREE.Quaternion();
         let anchorReady = false;
-        const SMOOTH = 0.08; // lower = smoother but more lag (0.05–0.12 is good)
-
         const markerEl = document.getElementById('main-marker');
 
         function updateAnchor() {
-          if (!markerEl || !markerEl.object3D) return;
+          if (!markerEl || !markerEl.object3D || !markerEl.object3D.visible) return;
           const mObj = markerEl.object3D;
-          if (!mObj.visible) return; // marker not detected this frame
-
-          // Get marker world position & quaternion
-          const wp = new THREE.Vector3();
-          const wq = new THREE.Quaternion();
-          mObj.getWorldPosition(wp);
-          mObj.getWorldQuaternion(wq);
-
-          if (!anchorReady) {
-            smoothPos.copy(wp);
-            smoothQuat.copy(wq);
-            anchorReady = true;
-          } else {
-            smoothPos.lerp(wp, SMOOTH);
-            smoothQuat.slerp(wq, SMOOTH);
-          }
-
-          // Apply smoothed transform to pivot
+          const wp = new THREE.Vector3(), wq = new THREE.Quaternion();
+          mObj.getWorldPosition(wp); mObj.getWorldQuaternion(wq);
+          if (!anchorReady) { smoothPos.copy(wp); smoothQuat.copy(wq); anchorReady = true; }
+          else { smoothPos.lerp(wp, 0.08); smoothQuat.slerp(wq, 0.08); }
           pivot.position.copy(smoothPos);
           pivot.quaternion.copy(smoothQuat);
         }
 
-        // ── Motion ──
-        const SHAPE_DURATION = 14000;
-        const TOTAL_CYCLE = SHAPE_DURATION * shapes.length;
-        let startTime = null, lastShapeIndex = -1;
+        // ─── ACT DEFINITIONS ─────────────────────────────────────────────────────
+        // Each act: { duration(ms), soundIndex, meshes[], init(), tick(t 0..1) }
 
-        function easeInOut(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
+        const ACTS = [
 
-        // All positions are in pivot-local space (i.e. marker-relative).
-        // Y+ is up from marker surface toward camera.
-        // Keep lateral drift modest so objects stay in frame.
-        const FAR_Y = 0.0, NEAR_Y = 2.5;
+          // ── ACT 0: Sphere white, SPACE TIME, centered, 4s, upright (Y-only rotate) ──
+          {
+            duration: 4000, soundIndex: 0, meshes: [sphere],
+            init() {
+              sphere.position.set(0,0,0); sphere.scale.setScalar(0.01);
+              sphere.rotation.set(0,0,0); setOpacity(sphere, 0);
+            },
+            tick(t) {
+              const e = easeInOut(t);
+              sphere.position.set(0, lerp(0, 3.8, e), 0);
+              sphere.scale.setScalar(lerp(0.05, 2.4, e));
+              sphere.rotation.y += 0.008; // upright: Y only
+              setOpacity(sphere, t < 0.08 ? t/0.08 : t > 0.92 ? (1-t)/0.08 : 1);
+              setShapeSoundVolume(e * 0.42);
+            }
+          },
 
-        function calcPos(t, traj) {
-          const e = easeInOut(t);
+          // ── ACT 1: Two green pyramids, diverge L+R, 6s ──
+          {
+            duration: 6000, soundIndex: 1, meshes: [pyramidL, pyramidR],
+            init() {
+              [pyramidL, pyramidR].forEach(p => {
+                p.position.set(0,0,0); p.scale.setScalar(0.01);
+                p.rotation.set(0,0,0); setOpacity(p, 0);
+              });
+            },
+            tick(t) {
+              const e = easeInOut(t);
+              const fwd    = lerp(0, 2.8, e);
+              const spread = lerp(0, 2.2, e);
+              pyramidL.position.set(-spread, fwd * 0.5, 0);
+              pyramidR.position.set( spread, fwd * 0.5, 0);
+              const sc = lerp(0.05, 1.5, e);
+              pyramidL.scale.setScalar(sc); pyramidR.scale.setScalar(sc);
+              pyramidL.rotation.y += 0.007; pyramidL.rotation.x += 0.003;
+              pyramidR.rotation.y -= 0.007; pyramidR.rotation.x += 0.003;
+              const op = t < 0.08 ? t/0.08 : t > 0.92 ? (1-t)/0.08 : 1;
+              setOpacity(pyramidL, op); setOpacity(pyramidR, op);
+              setShapeSoundVolume(e * 0.42);
+            }
+          },
 
-          // Y: rise from marker, slow to a hover, then push through
-          let y;
-          if (t < 0.75) {
-            y = FAR_Y + (NEAR_Y - FAR_Y) * e;
-          } else {
-            const ep = (t - 0.75) / 0.25;
-            y = NEAR_Y + ep * ep * 2.5;
-          }
+          // ── ACT 2: Cube pink, WAIT GO, pulsates 4s, upright ──
+          {
+            duration: 4000, soundIndex: 2, meshes: [cube],
+            init() {
+              cube.position.set(0, 0.7, 0); cube.scale.setScalar(0.75);
+              cube.rotation.set(0,0,0); setOpacity(cube, 0);
+            },
+            tick(t) {
+              // 1s on / 1s off beat
+              const beat = (t * 4) % 1; // cycles once per second
+              const on = beat < 0.5;
+              const actFade = t < 0.06 ? t/0.06 : t > 0.88 ? (1-t)/0.12 : 1;
+              setOpacity(cube, on ? actFade : 0);
+              cube.rotation.y += 0.006; // upright
+              cube.scale.setScalar(0.75);
+              setShapeSoundVolume(on ? actFade * 0.38 : 0);
+            }
+          },
 
-          // Lateral (X/Z in marker plane): hold center until 0.65, then veer
-          let xz;
-          if (t < 0.65) {
-            xz = 0; // pure straight rise
-          } else {
-            const ep = (t - 0.65) / 0.35;
-            xz = ep * ep; // accelerating exit
-          }
+          // ── ACT 3: Torus yellow, KNOW DON'T KNOW, wave + speed burst, 6s ──
+          {
+            duration: 6000, soundIndex: 3, meshes: [torus],
+            init() {
+              torus.position.set(0,0,0); torus.scale.setScalar(0.01);
+              torus.rotation.set(0,0,0); setOpacity(torus, 0);
+            },
+            tick(t) {
+              // Slow for first 5/6 (reaching ~55% of path), then burst last 1/6
+              let e;
+              const SLOW_END = 5/6;
+              if (t < SLOW_END) {
+                e = easeInOut(t / SLOW_END) * 0.55;
+              } else {
+                e = 0.55 + easeInOut((t - SLOW_END) / (1 - SLOW_END)) * 0.45;
+              }
+              const wave = Math.sin(t * Math.PI * 4) * 0.22; // slow wave
+              torus.position.set(0, lerp(0, 3.8, e) + wave, 0);
+              torus.scale.setScalar(lerp(0.05, 2.2, e));
+              torus.rotation.y += 0.008; torus.rotation.x += 0.003;
+              setOpacity(torus, t < 0.08 ? t/0.08 : t > 0.92 ? (1-t)/0.08 : 1);
+              setShapeSoundVolume(e * 0.42);
+            }
+          },
 
-          return {
-            x: xz * traj.xCurve * 1.5,
-            y,
-            z: xz * traj.zCurve * 1.5
-          };
-        }
+          // ── ACT 4: Cone orange, SUGAR SALT, spinning on tip axis, exits left, 4s ──
+          {
+            duration: 4000, soundIndex: 4, meshes: [cone],
+            init() {
+              cone.position.set(0,0,0); cone.scale.setScalar(0.01);
+              cone.rotation.set(Math.PI, 0, 0); // tip pointing up
+              setOpacity(cone, 0);
+            },
+            tick(t) {
+              const e = easeInOut(t);
+              cone.position.set(lerp(0, -2.8, e), lerp(0, 2.5, e), 0);
+              cone.scale.setScalar(lerp(0.05, 1.7, e));
+              // Alternating fast(0.5s)/slow(1s) spin pattern
+              const elapsed = t * 4;
+              const phase = elapsed % 1.5;
+              cone.rotation.y += phase < 0.5 ? 0.13 : 0.065;
+              setOpacity(cone, t < 0.08 ? t/0.08 : t > 0.92 ? (1-t)/0.08 : 1);
+              setShapeSoundVolume(e * 0.42);
+            }
+          },
+
+          // ── ACT 5: Cylinder blue, ENDS MEET, starts halfway, rolls on long axis, fills screen, 5s ──
+          {
+            duration: 5000, soundIndex: 5, meshes: [cylinder],
+            init() {
+              cylinder.position.set(0, 1.0, 0); // starts halfway
+              cylinder.scale.setScalar(0.55);
+              cylinder.rotation.set(0, 0, Math.PI/2); // lay on side so it rolls
+              setOpacity(cylinder, 0);
+            },
+            tick(t) {
+              const e = easeInOut(t);
+              cylinder.position.set(0, lerp(1.0, 3.8, e), 0);
+              cylinder.scale.setScalar(lerp(0.55, 2.6, e));
+              cylinder.rotation.z += 0.05; // rolling on long axis
+              setOpacity(cylinder, t < 0.08 ? t/0.08 : t > 0.92 ? (1-t)/0.08 : 1);
+              setShapeSoundVolume(e * 0.42);
+            }
+          },
+
+          // ── ACT 6: Torus knot red ?, rises to center (3s), holds+rotates (4s), fades. Total 7s ──
+          {
+            duration: 7000, soundIndex: 6, meshes: [torusKnot],
+            init() {
+              torusKnot.position.set(0,0,0); torusKnot.scale.setScalar(0.01);
+              torusKnot.rotation.set(0,0,0); setOpacity(torusKnot, 0);
+            },
+            tick(t) {
+              const RISE_END = 3/7;
+              let pos, sc, op;
+              if (t <= RISE_END) {
+                const e = easeInOut(t / RISE_END);
+                pos = lerp(0, 1.8, e);
+                sc  = lerp(0.05, 1.2, e);
+                op  = t < 0.05 ? t/0.05 : 1;
+              } else {
+                const ht = (t - RISE_END) / (1 - RISE_END);
+                pos = 1.8;
+                sc  = 1.2;
+                op  = ht > 0.85 ? (1 - ht) / 0.15 : 1;
+              }
+              torusKnot.position.set(0, pos, 0);
+              torusKnot.scale.setScalar(sc);
+              torusKnot.rotation.x += 0.007;
+              torusKnot.rotation.y += 0.010;
+              setOpacity(torusKnot, op);
+              setShapeSoundVolume(op * 0.42);
+            }
+          },
+
+        ]; // end ACTS
+
+        // ─── SEQUENCE RUNNER ─────────────────────────────────────────────────────
+        let currentAct = 0;
+        let actStart = null;
+        let inGap = false;
+        let gapStart = null;
+        const GAP_MS = 500;
+
+        // Prime first act
+        allMeshes.forEach(m => m.visible = false);
+        ACTS[0].init();
 
         function animate(timestamp) {
           requestAnimationFrame(animate);
           updateAnchor();
+          if (!anchorReady) return;
 
-          if (!startTime) startTime = timestamp;
-          const elapsed = (timestamp - startTime) % TOTAL_CYCLE;
-          const shapeIndex = Math.floor(elapsed / SHAPE_DURATION);
-          const t = (elapsed % SHAPE_DURATION) / SHAPE_DURATION;
-
-          if (shapeIndex !== lastShapeIndex) {
-            lastShapeIndex = shapeIndex;
-            startShapeSound(shapeIndex);
+          // Gap between loops
+          if (inGap) {
+            if (timestamp - gapStart >= GAP_MS) {
+              inGap = false;
+              currentAct = 0;
+              actStart = timestamp;
+              allMeshes.forEach(m => m.visible = false);
+              ACTS[currentAct].init();
+              ACTS[currentAct].meshes.forEach(m => m.visible = true);
+              startShapeSound(ACTS[currentAct].soundIndex);
+            }
+            return;
           }
 
-          shapes.forEach((s, i) => { s.visible = (i === shapeIndex) && anchorReady; });
-          const current = shapes[shapeIndex];
-          const traj = trajectories[shapeIndex];
-          const pos = calcPos(t, traj);
-          current.position.set(pos.x, pos.y, pos.z);
+          // First frame of act
+          if (!actStart) {
+            actStart = timestamp;
+            allMeshes.forEach(m => m.visible = false);
+            ACTS[currentAct].meshes.forEach(m => m.visible = true);
+            startShapeSound(ACTS[currentAct].soundIndex);
+          }
 
-          current.scale.setScalar(0.01 + 1.2 * easeInOut(t));
+          const t = Math.min((timestamp - actStart) / ACTS[currentAct].duration, 1);
 
-          const r = rotSpeeds[shapeIndex];
-          current.rotation.x += r.x;
-          current.rotation.y += r.y;
-          current.rotation.z += r.z;
+          allMeshes.forEach(m => m.visible = false);
+          ACTS[currentAct].meshes.forEach(m => m.visible = true);
+          ACTS[currentAct].tick(t);
 
-          // Opacity fade in/out
-          const m = current.material;
-          if (t < 0.08)      m.opacity = t / 0.08;
-          else if (t > 0.92) m.opacity = (1 - t) / 0.08;
-          else               m.opacity = 1;
-
-          setShapeSoundVolume(t);
+          // Act finished
+          if (t >= 1) {
+            ACTS[currentAct].meshes.forEach(m => { setOpacity(m, 0); m.visible = false; });
+            stopShapeSound();
+            currentAct++;
+            if (currentAct >= ACTS.length) {
+              inGap = true;
+              gapStart = timestamp;
+            } else {
+              actStart = timestamp;
+              allMeshes.forEach(m => m.visible = false);
+              ACTS[currentAct].init();
+              ACTS[currentAct].meshes.forEach(m => m.visible = true);
+              startShapeSound(ACTS[currentAct].soundIndex);
+            }
+          }
         }
 
         requestAnimationFrame(animate);
       }
 
-      if (aScene.hasLoaded) {
-        onSceneReady();
-      } else {
-        aScene.addEventListener('loaded', onSceneReady);
-      }
+      if (aScene.hasLoaded) onSceneReady();
+      else aScene.addEventListener('loaded', onSceneReady);
     }
   </script>
 </body>
