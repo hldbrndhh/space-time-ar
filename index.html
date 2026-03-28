@@ -90,8 +90,8 @@
       { freq:196.0, type:'sine',     filt:900  }, // 3 torus
       { freq:349.2, type:'triangle', filt:1600 }, // 4 cone
       { freq:130.8, type:'square',   filt:500  }, // 5 cylinder
-      // Knot: lower frequency, quieter (handled via lower peak vol in tick)
-      { freq:82.4,  type:'sine',     filt:400  }, // 6 knot — deep low tone
+      // Knot: single C3 note during rise; chord fired separately on arrival
+      { freq:130.8, type:'sine',     filt:600  }, // 6 knot — C3 single note
     ];
 
     function startShapeSound(idx) {
@@ -291,6 +291,9 @@
 
         var MESHES = [sphere, pyramid, cube, torus, cone, cylinder, torusKnot];
 
+        // Knot chord state
+        var knotChordFired = false;
+
         // ── Pivot ──
         var pivot = new THREE.Group();
         scene.add(pivot);
@@ -370,17 +373,18 @@
           makeAct(torus,    3, 12500, 1.8, 1.15, 0.006, 0.010, 0.002, 0.20),
           // 5. Cone — further out, tip-over tumble
           makeAct(cone,     4, 12500, 2.4, 1.40, 0.012, 0.000, 0.000, 0.20),
-          // 6. Cylinder — slow roll
-          makeAct(cylinder, 5, 12500, 1.8, 1.15, 0.000, 0.008, 0.018, 0.20),
+          // 6. Cylinder — upright, X-axis roll so text wraps around into view
+          makeAct(cylinder, 5, 12500, 1.8, 1.15, 0.018, 0.000, 0.000, 0.20),
           // 7. Knot — 3s longer (15500ms), lower/quieter sound (max vol 0.22 vs 0.42)
           {
             duration: 15500, soundIndex: 6, meshes: [torusKnot],
             init: function() {
               torusKnot.position.set(0,0,0); torusKnot.scale.setScalar(0.01);
               torusKnot.rotation.set(0,0,0); setOpacity(torusKnot,0); wireMat.opacity=0;
+              knotChordFired = false;
             },
             tick: function(t) {
-              var riseFrac=0.16, FADE_START=0.88; // shorter rise fraction since total is longer
+              var riseFrac=0.16, FADE_START=0.88;
               var holdY=1.8, holdSc=1.25;
               var pos, sc, op;
               if (t<=riseFrac) {
@@ -398,9 +402,39 @@
               torusKnot.rotation.z+=0.004;
               knotMat.transparent=true; knotMat.opacity=op;
               wireMat.transparent=true; wireMat.opacity=op*0.55;
-              // Quieter: peak vol 0.22 (half of other shapes)
-              if (shapeSound && audioCtx)
-                shapeSound.gain.gain.setTargetAtTime(clamp(op*0.22,0,0.22), audioCtx.currentTime, 0.08);
+              // Rise phase: quiet single C3 note via shapeSound
+              if (t<=riseFrac) {
+                if (shapeSound && audioCtx)
+                  shapeSound.gain.gain.setTargetAtTime(clamp(op*0.18,0,0.18), audioCtx.currentTime, 0.08);
+              } else {
+                // Once resting: silence the oscillator (chord handles audio)
+                if (shapeSound && audioCtx)
+                  shapeSound.gain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.3);
+                // Fire the C major chord exactly once when knot arrives
+                if (!knotChordFired && audioCtx) {
+                  knotChordFired = true;
+                  // C major: C3(130.8) E3(164.8) G3(196.0) — piano-style attack+decay
+                  [130.8, 164.8, 196.0].forEach(function(freq) {
+                    var osc = audioCtx.createOscillator();
+                    var env = audioCtx.createGain();
+                    osc.type = 'sine'; osc.frequency.value = freq;
+                    // Sub harmonic for body
+                    var sub = audioCtx.createOscillator();
+                    sub.type = 'triangle'; sub.frequency.value = freq * 2;
+                    var sg = audioCtx.createGain(); sg.gain.value = 0.3;
+                    sub.connect(sg); sg.connect(env);
+                    osc.connect(env); env.connect(masterOutput);
+                    // Piano envelope: sharp attack, medium decay, long release
+                    var now2 = audioCtx.currentTime;
+                    env.gain.setValueAtTime(0, now2);
+                    env.gain.linearRampToValueAtTime(0.28, now2 + 0.01);  // fast attack
+                    env.gain.exponentialRampToValueAtTime(0.12, now2 + 0.4); // decay
+                    env.gain.exponentialRampToValueAtTime(0.001, now2 + 3.5); // long release
+                    osc.start(now2); sub.start(now2);
+                    osc.stop(now2 + 4); sub.stop(now2 + 4);
+                  });
+                }
+              }
               // Pulsing dots
               var now = t*15.5;
               dots.forEach(function(dot, i) {
