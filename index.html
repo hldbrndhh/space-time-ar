@@ -38,7 +38,7 @@
 </head>
 <body>
   <div id="overlay">
-    <p>Point the phone<br/>at the horse<br/>in the picture</p>
+    <p>Point the phone<br/>at the horse<br/>in the picture<br/>and take a<br/>step back</p>
     <button id="start-btn">activate camera</button>
     <div id="sound-note">🔊 turn the sound on</div>
   </div>
@@ -395,8 +395,7 @@
               var riseFrac=0.16, FADE_START=0.88;
               var holdY=1.8, holdSc=1.25;
               var op;
-              // Chord fires 0.5s before knot arrives (0.5/15500 = 0.032 before riseFrac)
-              var chordT = riseFrac - (0.5 / 15.5);
+
               if (t<=riseFrac) {
                 var rt=t/riseFrac, e=easeOut(rt);
                 if (!knotHeld) {
@@ -419,47 +418,69 @@
               torusKnot.rotation.z+=0.004;
               knotMat.transparent=true; knotMat.opacity=op;
               wireMat.transparent=true; wireMat.opacity=op*0.55;
-              // Single C3 note during rise, fades when chord fires
+              // Quiet single C3 note during rise only
               if (shapeSound && audioCtx) {
-                var sVol = t < chordT ? clamp(op*0.15,0,0.15) : 0;
+                var sVol = t < riseFrac ? clamp(op*0.15,0,0.15) : 0;
                 shapeSound.gain.gain.setTargetAtTime(sVol, audioCtx.currentTime, 0.3);
               }
-              // 6-note C major chord with string resonance, fires 0.5s before arrival
-              if (!knotChordFired && audioCtx && t >= chordT) {
+              // Warm pad chord — fires immediately when knot arrives (t >= riseFrac)
+              if (!knotChordFired && audioCtx && t >= riseFrac) {
                 knotChordFired = true;
-                // Notes: C2, G2, C3, E3, G3, C4 — two octaves, open voicing
-                var notes = [
-                  { freq: 65.4,  vol: 0.32 }, // C2  — deep bass
-                  { freq: 98.0,  vol: 0.28 }, // G2  — bass fifth
-                  { freq: 130.8, vol: 0.24 }, // C3  — mid root
-                  { freq: 164.8, vol: 0.20 }, // E3  — mid third
-                  { freq: 196.0, vol: 0.18 }, // G3  — mid fifth
-                  { freq: 261.6, vol: 0.15 }, // C4  — high root
-                ];
+                // Notes selected: C2 G2 C3 E3 G3 B3 C4 G4 C5 (E4 off)
+                var padNotes = [65.41, 98.00, 130.81, 164.81, 196.00, 246.94, 261.63, 392.00, 523.25];
+                var peakVol  = 0.30;
+                var attack   = 0.64;
+                var swell    = 5.5;
+                var hold     = 4.5;
+                var release  = 1.3;
+                var reverbMix = 0.55;
+                var chorusW  = 2.0;
+                var total    = attack + swell + hold + release; // ~11.7s
+
+                // Reverb send
+                var conv = audioCtx.createConvolver();
+                conv.buffer = (function() {
+                  var rate = audioCtx.sampleRate, len = Math.floor(rate * 4.5);
+                  var buf = audioCtx.createBuffer(2, len, rate);
+                  for (var ch = 0; ch < 2; ch++) {
+                    var d = buf.getChannelData(ch);
+                    for (var i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/len, 2.2);
+                  }
+                  return buf;
+                })();
+                var dryG = audioCtx.createGain(); dryG.gain.value = 1 - reverbMix;
+                var wetG = audioCtx.createGain(); wetG.gain.value = reverbMix;
+                dryG.connect(masterOutput);
+                conv.connect(wetG); wetG.connect(masterOutput);
+
                 var now2 = audioCtx.currentTime;
-                notes.forEach(function(note) {
-                  // String timbre: sawtooth through resonant bandpass = bowed string character
-                  var saw  = audioCtx.createOscillator();
-                  saw.type = 'sawtooth'; saw.frequency.value = note.freq;
-                  // Resonant bandpass centred on note freq — creates string formant
-                  var bp   = audioCtx.createBiquadFilter();
-                  bp.type  = 'bandpass'; bp.frequency.value = note.freq * 2.5; bp.Q.value = 18;
-                  // Second harmonic adds shimmer
-                  var saw2 = audioCtx.createOscillator();
-                  saw2.type = 'sawtooth'; saw2.frequency.value = note.freq * 2;
-                  var g2   = audioCtx.createGain(); g2.gain.value = 0.18; saw2.connect(g2);
+                padNotes.forEach(function(freq) {
+                  // Triangle primary oscillator
+                  var osc  = audioCtx.createOscillator();
+                  osc.type = 'triangle'; osc.frequency.value = freq;
+                  // Chorused second oscillator (slight detune)
+                  var osc2 = audioCtx.createOscillator();
+                  osc2.type = 'triangle'; osc2.frequency.value = freq * (1 + chorusW * 0.0012);
+                  var cg   = audioCtx.createGain(); cg.gain.value = 0.7;
+                  osc2.connect(cg);
+
                   var env  = audioCtx.createGain();
-                  saw.connect(bp); bp.connect(env);
-                  g2.connect(env);
-                  env.connect(masterOutput);
-                  // String-like envelope: gentle bow attack, long sustain, slow release
+                  osc.connect(env); cg.connect(env);
+                  env.connect(dryG); env.connect(conv);
+
+                  // Per-note volume — bass notes louder, treble softer
+                  var noteVol = peakVol * (freq < 100 ? 1.0 : freq < 200 ? 0.85 : freq < 300 ? 0.75 : 0.55);
+
+                  // Envelope: soft attack → swell to peak → hold → release
                   env.gain.setValueAtTime(0, now2);
-                  env.gain.linearRampToValueAtTime(note.vol, now2 + 0.06);   // 60ms bow attack
-                  env.gain.exponentialRampToValueAtTime(note.vol * 0.75, now2 + 0.5); // settle
-                  env.gain.setValueAtTime(note.vol * 0.75, now2 + 5.5);      // hold 5s
-                  env.gain.exponentialRampToValueAtTime(0.001, now2 + 8.5);  // 3s release
-                  saw.start(now2); saw2.start(now2);
-                  saw.stop(now2 + 9); saw2.stop(now2 + 9);
+                  env.gain.linearRampToValueAtTime(noteVol * 0.15, now2 + attack);
+                  env.gain.linearRampToValueAtTime(noteVol, now2 + attack + swell);
+                  env.gain.setValueAtTime(noteVol, now2 + attack + swell + hold);
+                  env.gain.exponentialRampToValueAtTime(0.0001, now2 + total);
+
+                  osc.start(now2); osc2.start(now2);
+                  osc.stop(now2 + total + 0.5);
+                  osc2.stop(now2 + total + 0.5);
                 });
               }
               // Pulsing dots
