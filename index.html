@@ -24,8 +24,8 @@
     }
     #sound-note {
       font-family: 'Helvetica Neue', Helvetica, sans-serif; font-weight: 300;
-      font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
-      color: rgba(255,255,255,0.5); text-align: center;
+      color: rgba(255,255,255,0.9); font-size: 14px; letter-spacing: 3px;
+      text-transform: uppercase; text-align: center; padding: 0 60px; line-height: 2.8;
     }
     #instructions {
       position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -84,13 +84,13 @@
     }
 
     const SOUND_CFGS = [
-      { freq:220,   type:'sine',     filt:800  }, // 0 sphere
-      { freq:261.6, type:'triangle', filt:1200 }, // 1 pyramid
-      { freq:174.6, type:'square',   filt:600  }, // 2 cube
-      { freq:196.0, type:'sine',     filt:900  }, // 3 torus
-      { freq:349.2, type:'triangle', filt:1600 }, // 4 cone
-      { freq:130.8, type:'square',   filt:500  }, // 5 cylinder
-      { freq:293.7, type:'triangle', filt:1400 }, // 6 torus knot
+      { freq:220,   type:'sine',     filt:800  },
+      { freq:261.6, type:'triangle', filt:1200 },
+      { freq:174.6, type:'square',   filt:600  },
+      { freq:196.0, type:'sine',     filt:900  },
+      { freq:349.2, type:'triangle', filt:1600 },
+      { freq:130.8, type:'square',   filt:500  },
+      { freq:293.7, type:'triangle', filt:1400 },
     ];
 
     function startShapeSound(idx) {
@@ -117,6 +117,8 @@
     }
 
     // ─── TEXTURES ────────────────────────────────────────────────────────────────
+
+    // Standard repeating linear text tile
     function makeLinearTexture(bg, fg, words, seed0, fontSize, lineH, gap) {
       const sz = 2048, c = document.createElement('canvas');
       c.width = sz; c.height = sz;
@@ -138,32 +140,47 @@
       return new THREE.CanvasTexture(c);
     }
 
-    // Knot-optimised texture: the torus knot UV is a long horizontal strip
-    // (U wraps many times around the tube circumference, V runs along the length).
-    // We paint a tall canvas with large ? marks evenly spaced in a single vertical
-    // column so that every wrap of the tube shows a clean, readable glyph.
-    function makeKnotTexture() {
-      const W = 512, H = 2048;            // tall & narrow matches the UV strip
-      const c = document.createElement('canvas');
-      c.width = W; c.height = H;
+    // Cone texture: exactly 3 lines of text centred on a square canvas.
+    // Three.js ConeGeometry unwraps the lateral surface as a single triangle fan
+    // from tip (top) to base (bottom). U goes 0→1 around the circumference,
+    // V goes 0 (base) → 1 (tip). We paint 3 horizontal text bands so each band
+    // maps cleanly onto one third of the cone's height.
+    function makeConeTexture() {
+      const sz = 1024, c = document.createElement('canvas');
+      c.width = sz; c.height = sz;
       const ctx = c.getContext('2d');
-      ctx.fillStyle = '#cc0000'; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, sz, sz);
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      // Draw 8 evenly-spaced ? marks down the strip
-      const N = 8;
-      for (let i = 0; i < N; i++) {
-        const fontSize = Math.round(W * 0.72); // almost full width
-        ctx.font = `900 ${fontSize}px Arial Black, sans-serif`;
-        ctx.fillText('?', W / 2, H * (i + 0.5) / N);
-      }
+      const lines = ['SUGAR', 'SALT', 'SUGAR'];
+      const fontSize = 160;
+      ctx.font = `900 ${fontSize}px Arial Black, sans-serif`;
+      lines.forEach((word, i) => {
+        const y = sz * (i + 0.5) / lines.length;
+        ctx.fillText(word, sz / 2, y);
+      });
       return new THREE.CanvasTexture(c);
+    }
+
+    // Knot: one giant ? on a billboard sprite — bypasses UV entirely.
+    function makeQuestionSpriteMat() {
+      const sz = 512, c = document.createElement('canvas');
+      c.width = sz; c.height = sz;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#cc0000'; ctx.fillRect(0, 0, sz, sz);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 380px Arial Black, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('?', sz/2, sz/2 + 20);
+      const tex = new THREE.CanvasTexture(c);
+      return new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0, depthTest: false });
     }
 
     function mkMat(tex) {
       return new THREE.MeshStandardMaterial({
         map: tex, roughness: 0.8, metalness: 0.05,
-        transparent: true, opacity: 0, side: THREE.DoubleSide
+        transparent: true, opacity: 0,
+        side: THREE.FrontSide   // FrontSide only — avoids mirrored back-face text
       });
     }
 
@@ -206,37 +223,42 @@
         const dl = new THREE.DirectionalLight(0xffffff, 0.9);
         dl.position.set(3,5,3); scene.add(dl);
 
-        // ── Textures ──
-        // 1. White sphere — SPACE TIME, black text, larger font
-        const txSpaceTime = makeLinearTexture('#ffffff','#000000',['SPACE','TIME'],        137, 100, 120,  8);
-        // 2. Green pyramid — + / −
-        const txPlusMinus = makeLinearTexture('#1a7a1a','#000000',['+','−'],                42,  90,  95, 12);
-        // 3. Pink cube — WAIT GO, larger font for readability
-        const txWaitGo    = makeLinearTexture('#ff69b4','#000000',['WAIT','GO'],            77, 110, 130, 28);
-        // 4. Yellow torus — KNOW / DON'T KNOW
-        const txKnow      = makeLinearTexture('#ffe600','#000000',['KNOW',"DON'T KNOW"],  291,  62, 100, 20);
-        // 5. Black cone — SUGAR / SALT, white text, larger font
-        const txSugarSalt = makeLinearTexture('#000000','#ffffff',['SUGAR','SALT'],        199, 110, 130, 28);
-        // 6. Blue cylinder — ENDS MEET
-        const txEndsMeet  = makeLinearTexture('#1a3a8a','#ffffff',['ENDS MEET'],           333,  68, 100, 20);
-        // 7. Red knot — tall-strip texture with large readable ? marks
-        const txQuestion  = makeKnotTexture();
+        // ── Textures & materials ──
+        const txSpaceTime = makeLinearTexture('#ffffff','#000000',['SPACE','TIME'],       137,100,120, 8);
+        const txPlusMinus = makeLinearTexture('#1a7a1a','#000000',['+','−'],               42, 90, 95,12);
+        const txWaitGo    = makeLinearTexture('#ff69b4','#000000',['WAIT','GO'],           77,110,130,28);
+        const txKnow      = makeLinearTexture('#ffe600','#000000',['KNOW',"DON'T KNOW"], 291, 62,100,20);
+        const txEndsMeet  = makeLinearTexture('#1a3a8a','#ffffff',['ENDS MEET'],          333, 68,100,20);
+        const txCone      = makeConeTexture();
+        const spriteMat   = makeQuestionSpriteMat();
 
         // ── Meshes ──
-        const sphere    = new THREE.Mesh(new THREE.SphereGeometry(0.5,64,64),            mkMat(txSpaceTime));
-        const pyramid   = new THREE.Mesh(makePyramidGeo(0.7,0.45),                       mkMat(txPlusMinus));
-        const cube      = new THREE.Mesh(new THREE.BoxGeometry(0.7,0.7,0.7),             mkMat(txWaitGo));
-        const torus     = new THREE.Mesh(new THREE.TorusGeometry(0.42,0.16,32,100),      mkMat(txKnow));
-        const cone      = new THREE.Mesh(new THREE.ConeGeometry(0.35,0.75,32),           mkMat(txSugarSalt));
-        const cylinder  = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.9,32),  mkMat(txEndsMeet));
-        const torusKnot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.38,0.12,120,16), mkMat(txQuestion));
+        const sphere    = new THREE.Mesh(new THREE.SphereGeometry(0.5,64,64),           mkMat(txSpaceTime));
+        const pyramid   = new THREE.Mesh(makePyramidGeo(0.7,0.45),                      mkMat(txPlusMinus));
+        const cube      = new THREE.Mesh(new THREE.BoxGeometry(0.7,0.7,0.7),            mkMat(txWaitGo));
+        const torus     = new THREE.Mesh(new THREE.TorusGeometry(0.42,0.16,32,100),     mkMat(txKnow));
+        const cone      = new THREE.Mesh(new THREE.ConeGeometry(0.4,1.0,64),            mkMat(txCone));
+        const cylinder  = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.9,32), mkMat(txEndsMeet));
 
-        const ALL = [sphere, pyramid, cube, torus, cone, cylinder, torusKnot];
+        // Torus knot as the 3D shape (red, no texture — the ? is on a sprite)
+        const knotMat   = new THREE.MeshStandardMaterial({
+          color: 0xcc0000, roughness: 0.6, metalness: 0.1,
+          transparent: true, opacity: 0
+        });
+        const torusKnot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.38,0.12,120,16), knotMat);
 
-        // ── Pivot (world-space anchor, smoothed to marker) ──
+        // Billboard sprite — single large ? always facing camera, sits in front of knot
+        const sprite = new THREE.Sprite(spriteMat);
+        sprite.scale.set(0.9, 0.9, 1);
+        sprite.position.set(0, 0, 0);
+        torusKnot.add(sprite);   // child of knot so it moves with it
+
+        const MESHES = [sphere, pyramid, cube, torus, cone, cylinder, torusKnot];
+
+        // ── Pivot (smoothed world-space anchor) ──
         const pivot = new THREE.Group();
         scene.add(pivot);
-        ALL.forEach(m => { m.visible = false; pivot.add(m); });
+        MESHES.forEach(m => { m.visible = false; pivot.add(m); });
 
         const sPos = new THREE.Vector3(), sQuat = new THREE.Quaternion();
         let anchorReady = false;
@@ -256,18 +278,26 @@
         // ── Helpers ──
         function clamp(v,a,b) { return Math.max(a,Math.min(b,v)); }
         function easeOut(t)   { t=clamp(t,0,1); return t*(2-t); }
+
         function setOpacity(mesh, v) {
-          const apply = m => { if (m) { m.transparent=true; m.opacity=clamp(v,0,1); } };
-          if (Array.isArray(mesh.material)) mesh.material.forEach(apply); else apply(mesh.material);
+          v = clamp(v,0,1);
+          const apply = m => { if (m) { m.transparent=true; m.opacity=v; } };
+          if (Array.isArray(mesh.material)) mesh.material.forEach(apply);
+          else apply(mesh.material);
+          // Also update any sprite children
+          mesh.children.forEach(child => {
+            if (child.isSprite && child.material) {
+              child.material.transparent = true;
+              child.material.opacity = v;
+            }
+          });
         }
 
         // ── Rise-Hold-Fade factory ──
         function makeAct(mesh, sndIdx, durMs, holdY, holdSc, rotX, rotY, rotZ, riseFrac) {
           riseFrac = riseFrac || 0.2;
           return {
-            duration: durMs,
-            soundIndex: sndIdx,
-            meshes: [mesh],
+            duration: durMs, soundIndex: sndIdx, meshes: [mesh],
             init() {
               mesh.position.set(0,0,0); mesh.scale.setScalar(0.01);
               mesh.rotation.set(0,0,0); setOpacity(mesh, 0);
@@ -276,8 +306,7 @@
               const FADE_START = 0.85;
               let pos, sc, op;
               if (t <= riseFrac) {
-                const rt = t / riseFrac;
-                const e  = easeOut(rt);
+                const rt = t / riseFrac, e = easeOut(rt);
                 pos = holdY * e;
                 sc  = 0.01 + (holdSc - 0.01) * e;
                 op  = rt < 0.12 ? rt / 0.12 : 1;
@@ -299,29 +328,28 @@
         }
 
         // ── ACTS ──
-        //              mesh       snd  dur(ms)  holdY  holdSc   rotX    rotY    rotZ   riseFrac
         const ACTS = [
-          // 1. White sphere — dual-axis rotation
-          makeAct(sphere,    0, 10000,  1.8,  1.20,  0.005,  0.007,  0.000,  0.20),
-          // 2. Green pyramid
-          makeAct(pyramid,   1, 10000,  1.8,  1.10,  0.005,  0.008,  0.003,  0.20),
-          // 3. Pink cube — larger text handled in texture
-          makeAct(cube,      2, 10000,  1.8,  1.10,  0.005,  0.007,  0.004,  0.20),
-          // 4. Yellow torus
-          makeAct(torus,     3, 10000,  1.8,  1.15,  0.006,  0.010,  0.002,  0.20),
-          // 5. Black cone — comes out further (holdY 2.4, larger scale 1.4)
-          makeAct(cone,      4, 10000,  2.4,  1.40,  0.000,  0.009,  0.000,  0.20),
-          // 6. Blue cylinder — slower roll (rotZ halved to 0.018)
-          makeAct(cylinder,  5, 10000,  1.8,  1.15,  0.000,  0.008,  0.018,  0.20),
-          // 7. Red knot
-          makeAct(torusKnot, 6, 10000,  1.8,  1.25,  0.007,  0.011,  0.004,  0.20),
+          // 1. Sphere — FrontSide + slow tumble on X and Y so text stays legible
+          makeAct(sphere,    0, 10000,  1.8, 1.20,  0.003, 0.007, 0.000, 0.20),
+          // 2. Pyramid — green, +/−
+          makeAct(pyramid,   1, 10000,  1.8, 1.10,  0.005, 0.008, 0.003, 0.20),
+          // 3. Cube — pink, WAIT/GO
+          makeAct(cube,      2, 10000,  1.8, 1.10,  0.005, 0.007, 0.004, 0.20),
+          // 4. Torus — yellow, KNOW/DON'T KNOW
+          makeAct(torus,     3, 10000,  1.8, 1.15,  0.006, 0.010, 0.002, 0.20),
+          // 5. Cone — further out, rotates on X axis (tip-over tumble, not just spin)
+          makeAct(cone,      4, 10000,  2.4, 1.40,  0.012, 0.000, 0.000, 0.20),
+          // 6. Cylinder — blue, slow roll
+          makeAct(cylinder,  5, 10000,  1.8, 1.15,  0.000, 0.008, 0.018, 0.20),
+          // 7. Knot — red solid + billboard ? sprite
+          makeAct(torusKnot, 6, 10000,  1.8, 1.25,  0.007, 0.011, 0.004, 0.20),
         ];
 
         // ── Sequence runner ──
         let curAct = 0, actStart = null, inGap = false, gapStart = null;
         const GAP_MS = 600;
 
-        ALL.forEach(m => m.visible = false);
+        MESHES.forEach(m => m.visible = false);
         ACTS[0].init();
 
         function animate(ts) {
@@ -332,7 +360,7 @@
           if (inGap) {
             if (ts - gapStart >= GAP_MS) {
               inGap = false; curAct = 0; actStart = ts;
-              ALL.forEach(m => m.visible = false);
+              MESHES.forEach(m => m.visible = false);
               ACTS[0].init();
               ACTS[0].meshes.forEach(m => m.visible = true);
               startShapeSound(ACTS[0].soundIndex);
@@ -342,13 +370,13 @@
 
           if (!actStart) {
             actStart = ts;
-            ALL.forEach(m => m.visible = false);
+            MESHES.forEach(m => m.visible = false);
             ACTS[curAct].meshes.forEach(m => m.visible = true);
             startShapeSound(ACTS[curAct].soundIndex);
           }
 
           const t = clamp((ts - actStart) / ACTS[curAct].duration, 0, 1);
-          ALL.forEach(m => m.visible = false);
+          MESHES.forEach(m => m.visible = false);
           ACTS[curAct].meshes.forEach(m => m.visible = true);
           ACTS[curAct].tick(t);
 
@@ -360,7 +388,7 @@
               inGap = true; gapStart = ts;
             } else {
               actStart = ts;
-              ALL.forEach(m => m.visible = false);
+              MESHES.forEach(m => m.visible = false);
               ACTS[curAct].init();
               ACTS[curAct].meshes.forEach(m => m.visible = true);
               startShapeSound(ACTS[curAct].soundIndex);
